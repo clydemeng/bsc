@@ -321,6 +321,11 @@ const (
 	// BalanceIncreaseBSCDistributeReward is a balance change that increases the block validator's balance and
 	// happens when BSC is distributing rewards to validator.
 	BalanceIncreaseBSCDistributeReward BalanceChangeReason = 211
+
+	// REVM specific balance changes
+
+	// BalanceChangeRevmTransfer is a balance change that happens when REVM processes a transfer
+	BalanceChangeRevmTransfer BalanceChangeReason = 212
 )
 
 // GasChangeReason is used to indicate the reason for a gas change, useful
@@ -418,4 +423,9 @@ const (
 	// NonceChangeRevert is emitted when the nonce is reverted back to a previous value due to call failure.
 	// It is only emitted when the tracer has opted in to use the journaling wrapper (WrapWithJournal).
 	NonceChangeRevert NonceChangeReason = 6
+
+	// REVM specific nonce changes
+
+	// NonceChangeRevm is emitted when the nonce is changed by REVM processing
+	NonceChangeRevm NonceChangeReason = 7
 )

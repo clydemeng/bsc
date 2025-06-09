@@ -1,3 +1,6 @@
+//go:build !revm
+// +build !revm
+
 // Copyright 2015 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
@@ -408,4 +411,4 @@ func onSystemCallStart(tracer *tracing.Hooks, ctx *tracing.VMContext) {
 	} else if tracer.OnSystemCallStart != nil {
 		tracer.OnSystemCallStart()
 	}
-}
+} 
