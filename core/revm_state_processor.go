@@ -61,7 +61,7 @@ func preloadAccountToRevm(revm_instance *C.RevmInstance, addr common.Address, st
 	balance := statedb.GetBalance(addr)
 	balance_str := C.CString(balance.String())
 	defer C.free(unsafe.Pointer(balance_str))
-	
+
 	if C.revm_set_balance(revm_instance, addr_str, balance_str) != 0 {
 		return fmt.Errorf("failed to set balance for %s", addr.Hex())
 	}
@@ -76,11 +76,11 @@ func preloadAccountToRevm(revm_instance *C.RevmInstance, addr common.Address, st
 	code := statedb.GetCode(addr)
 	if len(code) > 0 {
 		log.Debug("Account has contract code - REVM will handle code execution", "addr", addr.Hex(), "codeLen", len(code))
-		
+
 		// Note: Contract code and storage will be loaded dynamically by REVM when needed
 		// The current FFI interface has basic storage support via revm_set_storage
 		// For comprehensive state sync, we focus on balance and nonce synchronization
-		
+
 		// Note: Storage preloading would require iterating over storage
 		// For now, we'll rely on REVM's dynamic loading capabilities
 		// This is sufficient for basic state synchronization testing
@@ -98,6 +98,7 @@ func preloadAccountToRevm(revm_instance *C.RevmInstance, addr common.Address, st
 // returns the amount of gas that was used in the process. If any of the
 // transactions failed to execute due to insufficient gas it will return an error.
 func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg vm.Config) (*ProcessResult, error) {
+	log.Error("REVM Processing block", "block", block.Number(), "txCount", len(block.Transactions()))
 	// Create a new REVM instance
 	revm_config := C.RevmConfigFFI{
 		chain_id: C.uint64_t(p.config.ChainID.Uint64()),
@@ -158,10 +159,10 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	// Collect all accounts that will be touched by this block's transactions
 	touchedAccounts := make(map[common.Address]bool)
-	
+
 	// Always include block coinbase (miner reward recipient)
 	touchedAccounts[header.Coinbase] = true
-	
+
 	// Include system contract addresses that might be involved
 	systemContractAddresses := []common.Address{
 		common.HexToAddress("0x0000000000000000000000000000000000001000"), // ValidatorSet
@@ -175,26 +176,26 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		common.HexToAddress("0x0000000000000000000000000000000000001008"), // TokenManager
 		common.HexToAddress("0x0000000000000000000000000000000000001009"), // CrossChain
 	}
-	
+
 	for _, addr := range systemContractAddresses {
 		if statedb.Exist(addr) {
 			touchedAccounts[addr] = true
 		}
 	}
-	
+
 	for _, tx := range block.Transactions() {
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create message for tx: %w", err)
 		}
-		
+
 		// Add sender
 		touchedAccounts[msg.From] = true
-		
+
 		// Add recipient if it exists
 		if msg.To != nil {
 			touchedAccounts[*msg.To] = true
-			
+
 			// If the recipient is a contract, also preload accounts it might interact with
 			if statedb.GetCodeSize(*msg.To) > 0 {
 				// This is a contract call - might interact with many addresses
@@ -212,7 +213,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	// Pre-load all touched accounts into REVM
 	log.Info("Pre-loading accounts into REVM", "count", len(touchedAccounts), "block", blockNumber, "txCount", len(block.Transactions()))
-	
+
 	// --- BEGIN DEBUG LOGGING ---
 	var preloadedAddressesForBlock []string
 	// --- END DEBUG LOGGING ---
@@ -373,7 +374,7 @@ func ApplyTransactionWithRevm(revm_instance *C.RevmInstance, msg *Message, state
 		contractAddr := crypto.CreateAddress(msg.From, msg.Nonce)
 		affectedAccounts = append(affectedAccounts, contractAddr)
 	}
-	
+
 	// Store pre-execution state for comparison later
 	preState := make(map[common.Address]*accountState)
 	for _, addr := range affectedAccounts {
@@ -404,7 +405,7 @@ func ApplyTransactionWithRevm(revm_instance *C.RevmInstance, msg *Message, state
 	}
 
 	gas_limit := C.uint64_t(msg.GasLimit)
-	
+
 	// Execute transaction in REVM
 	result_ffi := C.revm_call_contract(revm_instance, caller_str, to_ptr, data_ptr, data_len, value_str, gas_limit)
 	if result_ffi == nil {
@@ -447,20 +448,20 @@ func ApplyTransactionWithRevm(revm_instance *C.RevmInstance, msg *Message, state
 	var txLogs []*types.Log
 	if result_ffi.logs_count > 0 {
 		log.Debug("REVM execution produced logs", "txHash", tx.Hash().Hex(), "logCount", int(result_ffi.logs_count))
-		
+
 		// For now, we'll create an empty logs array - the FFI log structure needs to be carefully mapped
 		// This is not critical for basic state synchronization and consensus compatibility
 		txLogs = make([]*types.Log, 0)
-		
+
 		// TODO: Properly parse REVM logs when FFI interface is stabilized
 		// The current LogFFI structure in the header needs to be properly integrated
 	}
 
 	// Create receipt with proper cumulative gas and logs
 	receipt := createSuccessfulReceiptWithLogs(tx, blockNumber, blockHash, statedb, gasUsed, *usedGas, contractAddr, txLogs)
-	
+
 	log.Debug("REVM transaction applied successfully", "txHash", tx.Hash().Hex(), "gasUsed", gasUsed, "cumulativeGas", *usedGas, "logs", len(txLogs))
-	
+
 	return receipt, nil
 }
 
@@ -473,7 +474,7 @@ type accountState struct {
 // syncStateFromRevm reads the final state from REVM and applies changes to Go statedb
 func syncStateFromRevm(revm_instance *C.RevmInstance, affectedAccounts []common.Address, statedb *state.StateDB, preState map[common.Address]*accountState) error {
 	log.Debug("Syncing state from REVM", "accounts", len(affectedAccounts))
-	
+
 	// Sync all affected accounts
 	for _, addr := range affectedAccounts {
 		err := syncSingleAccountFromRevm(revm_instance, addr, statedb, preState)
@@ -482,7 +483,7 @@ func syncStateFromRevm(revm_instance *C.RevmInstance, affectedAccounts []common.
 			// Continue with other accounts rather than failing completely
 		}
 	}
-	
+
 	log.Debug("State synchronization from REVM completed successfully")
 	return nil
 }
@@ -491,22 +492,22 @@ func syncStateFromRevm(revm_instance *C.RevmInstance, affectedAccounts []common.
 func syncSingleAccountFromRevm(revm_instance *C.RevmInstance, addr common.Address, statedb *state.StateDB, preState map[common.Address]*accountState) error {
 	addr_str := C.CString(addr.Hex())
 	defer C.free(unsafe.Pointer(addr_str))
-	
+
 	// Get final balance from REVM
 	balance_str := C.revm_get_balance(revm_instance, addr_str)
 	if balance_str != nil {
 		defer C.revm_free_string(balance_str)
-		
+
 		balanceGoString := C.GoString(balance_str)
 		var finalBalance *big.Int
 		var ok bool
-		
+
 		// Try parsing as decimal first, then as hex if that fails
 		finalBalance, ok = new(big.Int).SetString(balanceGoString, 10)
 		if !ok && strings.HasPrefix(balanceGoString, "0x") {
 			finalBalance, ok = new(big.Int).SetString(balanceGoString[2:], 16)
 		}
-		
+
 		if !ok {
 			log.Warn("Failed to parse balance from REVM", "addr", addr.Hex(), "balance_str", balanceGoString)
 		} else {
@@ -530,34 +531,34 @@ func syncSingleAccountFromRevm(revm_instance *C.RevmInstance, addr common.Addres
 			statedb.SetBalance(addr, new(uint256.Int), tracing.BalanceChangeRevmTransfer)
 		}
 	}
-	
+
 	// Get final nonce from REVM
 	finalNonce := uint64(C.revm_get_nonce(revm_instance, addr_str))
 	currentNonce := statedb.GetNonce(addr)
-	
+
 	// Update nonce in statedb if it changed
 	if currentNonce != finalNonce {
 		log.Debug("Updating nonce from REVM", "addr", addr.Hex(), "old", currentNonce, "new", finalNonce)
 		statedb.SetNonce(addr, finalNonce, tracing.NonceChangeRevm)
 	}
-	
+
 	// Note: Code changes are handled via contract creation in the main transaction processing
 	// Storage changes should be automatically synced by REVM as part of the execution
-	
+
 	return nil
 }
 
 // createRevertedReceipt creates a receipt for a failed transaction
 func createRevertedReceipt(tx *types.Transaction, blockNumber *big.Int, blockHash common.Hash, statedb *state.StateDB, gasUsed uint64, totalUsedGas *uint64) (*types.Receipt, error) {
 	*totalUsedGas += gasUsed
-	
+
 	receipt := types.NewReceipt(statedb.IntermediateRoot(true).Bytes(), true, *totalUsedGas)
 	receipt.TxHash = tx.Hash()
 	receipt.GasUsed = gasUsed
 	receipt.BlockHash = blockHash
 	receipt.BlockNumber = blockNumber
 	receipt.TransactionIndex = uint(statedb.TxIndex())
-	
+
 	return receipt, nil
 }
 
@@ -569,12 +570,12 @@ func createSuccessfulReceipt(tx *types.Transaction, blockNumber *big.Int, blockH
 	receipt.BlockHash = blockHash
 	receipt.BlockNumber = blockNumber
 	receipt.TransactionIndex = uint(statedb.TxIndex())
-	
+
 	// Set contract address for contract creation
 	if contractAddr != (common.Address{}) {
 		receipt.ContractAddress = contractAddr
 	}
-	
+
 	return receipt
 }
 
@@ -587,15 +588,15 @@ func createSuccessfulReceiptWithLogs(tx *types.Transaction, blockNumber *big.Int
 	receipt.BlockNumber = blockNumber
 	receipt.TransactionIndex = uint(statedb.TxIndex())
 	receipt.Logs = logs
-	
+
 	// Set contract address for contract creation
 	if contractAddr != (common.Address{}) {
 		receipt.ContractAddress = contractAddr
 	}
-	
+
 	// Calculate bloom filter from logs
 	receipt.Bloom = types.CreateBloom([]*types.Receipt{receipt})
-	
+
 	return receipt
 }
 
@@ -773,4 +774,4 @@ func onSystemCallStart(tracer *tracing.Hooks, ctx *tracing.VMContext) {
 	} else if tracer.OnSystemCallStart != nil {
 		tracer.OnSystemCallStart()
 	}
-} 
+}
