@@ -4,8 +4,9 @@
 package core
 
 /*
-#cgo LDFLAGS: -L/Users/ruojunm/workspace_2025/rust/bsc-revm-integration/revm_ffi_wrapper/target/release -lrevm_ffi
-#include "/Users/ruojunm/workspace_2025/rust/bsc-revm-integration/revm_ffi_wrapper/revm_ffi.h"
+#cgo CFLAGS: -I../../revm_integration/revm_ffi_wrapper
+#cgo LDFLAGS: -L../../revm_integration/revm_ffi_wrapper/target/release -lrevm_ffi -Wl,-rpath,../../revm_integration/revm_ffi_wrapper/target/release
+#include "../../revm_integration/revm_ffi_wrapper/revm_ffi.h"
 #include <stdlib.h>
 */
 import "C"
@@ -360,15 +361,8 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 }
 
 func ApplyTransactionWithRevm(revm_instance *C.RevmInstance, msg *Message, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64) (*types.Receipt, error) {
-	// Determine if this is a system transaction
-	isSystemTx := false
-	if posa, ok := consensus.Engine.(*parlia.Parlia); ok {
-		var err error
-		isSystemTx, err = posa.IsSystemTransaction(tx, blockNumber)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check system transaction: %w", err)
-		}
-	}
+	// NOTE: System transactions are handled separately in the Go implementation.
+	// For this initial REVM port we treat all transactions the same.
 
 	// Determine all accounts that might be affected
 	affectedAccounts := []common.Address{msg.From}
@@ -412,7 +406,7 @@ func ApplyTransactionWithRevm(revm_instance *C.RevmInstance, msg *Message, state
 	gas_limit := C.uint64_t(msg.GasLimit)
 	
 	// Execute transaction in REVM
-	result_ffi := C.revm_call_contract(revm_instance, caller_str, to_ptr, data_ptr, data_len, value_str, gas_limit, C.bool(isSystemTx))
+	result_ffi := C.revm_call_contract(revm_instance, caller_str, to_ptr, data_ptr, data_len, value_str, gas_limit)
 	if result_ffi == nil {
 		last_error := C.revm_get_last_error(revm_instance)
 		err_str := C.GoString(last_error)

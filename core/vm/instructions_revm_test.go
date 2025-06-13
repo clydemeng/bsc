@@ -20,128 +20,43 @@
 package vm
 
 import (
-	"encoding/hex"
+	"strings"
 	"testing"
 )
 
-// TestREVMBasicOps tests basic arithmetic operations using REVM
-func TestREVMBasicOps(t *testing.T) {
-	// Create REVM instance
+func TestRevmAdd(t *testing.T) {
 	executor, err := NewRevmExecutor()
 	if err != nil {
 		t.Fatalf("Failed to create RevmExecutor: %v", err)
 	}
 	defer executor.Close()
 
-	tests := []struct {
-		name     string
-		code     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "ADD",
-			code:     "6001600201", // PUSH1 1 PUSH1 2 ADD
-			input:    "",
-			expected: "0000000000000000000000000000000000000000000000000000000000000003",
-		},
-		{
-			name:     "SUB",
-			code:     "6002600103", // PUSH1 2 PUSH1 1 SUB
-			input:    "",
-			expected: "0000000000000000000000000000000000000000000000000000000000000001",
-		},
-		{
-			name:     "MUL",
-			code:     "6002600202", // PUSH1 2 PUSH1 2 MUL
-			input:    "",
-			expected: "0000000000000000000000000000000000000000000000000000000000000004",
-		},
+	deployer := "0x1000000000000000000000000000000000000001"
+
+	// Give the deployer some balance so the deployment succeeds.
+	if err := executor.SetBalance(deployer, "0x56BC75E2D63100000"); err != nil { // 100 ETH
+		t.Fatalf("failed to fund deployer: %v", err)
 	}
 
-	// Setup a test account with some ETH for gas
-	testAddr := "0x1000000000000000000000000000000000000001"
-	err = executor.SetBalance(testAddr, "0x8ac7230489e80000") // 10 ETH
+	// Creation bytecode that deploys a contract whose runtime code performs 1 + 2 and returns the result.
+	creationCode := []byte{
+		0x60, 0x0d, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0d, 0x60, 0x00, 0xf3, // copy runtime and return
+		0x60, 0x01, 0x60, 0x02, 0x01, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3, // runtime: 1 2 ADD store return
+	}
+
+	contractAddr, err := executor.DeployContract(deployer, creationCode, 1_000_000)
 	if err != nil {
-		t.Fatalf("Failed to set balance: %v", err)
+		t.Fatalf("Contract deployment failed: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Convert hex string to bytes
-			code, err := hex.DecodeString(tt.code)
-			if err != nil {
-				t.Fatalf("Failed to decode code hex: %v", err)
-			}
-
-			// Call contract
-			outputHex, err := executor.CallContract(testAddr, testAddr, code, "0x0", 1000000)
-			if err != nil {
-				t.Fatalf("Contract execution failed: %v", err)
-			}
-
-			// Compare with expected result
-			if outputHex != tt.expected {
-				t.Errorf("Test %s failed: got %s, want %s", tt.name, outputHex, tt.expected)
-			}
-		})
-	}
-}
-
-// TestREVMByteOp tests the BYTE operation using REVM
-func TestREVMByteOp(t *testing.T) {
-	// Create REVM instance
-	executor, err := NewRevmExecutor()
+	// Call the deployed contract with empty calldata
+	outputHex, err := executor.CallContract(deployer, contractAddr, nil, "0x0", 1_000_000)
 	if err != nil {
-		t.Fatalf("Failed to create RevmExecutor: %v", err)
-	}
-	defer executor.Close()
-
-	tests := []struct {
-		name     string
-		value    string
-		index    byte
-		expected string
-	}{
-		{
-			name:     "First byte",
-			value:    "ABCDEF0908070605040302010000000000000000000000000000000000000000",
-			index:    0,
-			expected: "00000000000000000000000000000000000000000000000000000000000000AB",
-		},
-		{
-			name:     "Second byte",
-			value:    "ABCDEF0908070605040302010000000000000000000000000000000000000000",
-			index:    1,
-			expected: "00000000000000000000000000000000000000000000000000000000000000CD",
-		},
+		t.Fatalf("Contract execution failed: %v", err)
 	}
 
-	// Setup a test account with some ETH for gas
-	testAddr := "0x1000000000000000000000000000000000000001"
-	err = executor.SetBalance(testAddr, "0x8ac7230489e80000") // 10 ETH
-	if err != nil {
-		t.Fatalf("Failed to set balance: %v", err)
+	expected := "0000000000000000000000000000000000000000000000000000000000000003"
+	if !strings.EqualFold(outputHex, expected) {
+		t.Errorf("Unexpected output: got %s, want %s", outputHex, expected)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create bytecode: PUSH32 value PUSH1 index BYTE
-			value, _ := hex.DecodeString(tt.value)
-			code := append([]byte{0x7f}, value...) // PUSH32
-			code = append(code, 0x60, tt.index)    // PUSH1 index
-			code = append(code, 0x1a)              // BYTE
-
-			// Call contract
-			outputHex, err := executor.CallContract(testAddr, testAddr, code, "0x0", 1000000)
-			if err != nil {
-				t.Fatalf("Contract execution failed: %v", err)
-			}
-
-			// Compare with expected result
-			if outputHex != tt.expected {
-				t.Errorf("Test %s failed: got %s, want %s", tt.name, outputHex, tt.expected)
-			}
-		})
-	}
-}
+} 

@@ -85,4 +85,41 @@ func (e *RevmExecutor) CallContract(from, to string, data []byte, value string, 
 		C.memcpy(unsafe.Pointer(&output[0]), unsafe.Pointer(result.output_data), C.size_t(result.output_len))
 	}
 	return hex.EncodeToString(output), nil
+}
+
+// DeployContract deploys the given bytecode from the specified deployer address and returns the created contract address.
+func (e *RevmExecutor) DeployContract(deployer string, bytecode []byte, gasLimit uint64) (string, error) {
+	if len(bytecode) == 0 {
+		return "", errors.New("bytecode is empty")
+	}
+
+	cDeployer := C.CString(deployer)
+	defer C.free(unsafe.Pointer(cDeployer))
+
+	// Obtain pointer to bytecode slice
+	cBytecodePtr := (*C.uchar)(unsafe.Pointer(&bytecode[0]))
+
+	result := C.revm_deploy_contract(
+		e.instance,
+		cDeployer,
+		cBytecodePtr,
+		C.uint(len(bytecode)),
+		C.uint64_t(gasLimit),
+	)
+
+	if result == nil {
+		return "", errors.New("contract deployment failed: result is nil")
+	}
+	defer C.revm_free_deployment_result(result)
+
+	if result.success == 0 {
+		return "", errors.New("contract deployment failed")
+	}
+
+	if result.contract_address == nil {
+		return "", errors.New("deployment succeeded but no contract address returned")
+	}
+
+	addr := C.GoString(result.contract_address)
+	return addr, nil
 } 
