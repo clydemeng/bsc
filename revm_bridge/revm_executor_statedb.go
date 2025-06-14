@@ -87,4 +87,39 @@ func (e *RevmExecutorStateDB) CallContract(from, to string, data []byte, value s
         C.memcpy(unsafe.Pointer(&output[0]), unsafe.Pointer(result.output_data), C.size_t(result.output_len))
     }
     return hex.EncodeToString(output), nil
+}
+
+// CallContractCommit executes a state-changing call and commits the result.
+func (e *RevmExecutorStateDB) CallContractCommit(from, to string, data []byte, value string, gasLimit uint64) error {
+    cFrom := C.CString(from)
+    defer C.free(unsafe.Pointer(cFrom))
+    cTo := C.CString(to)
+    defer C.free(unsafe.Pointer(cTo))
+
+    var cDataPtr *C.uchar
+    var cDataBuf unsafe.Pointer
+    if len(data) > 0 {
+        cDataBuf = C.CBytes(data)
+        cDataPtr = (*C.uchar)(cDataBuf)
+        defer C.free(cDataBuf)
+    }
+
+    cValue := C.CString(value)
+    defer C.free(unsafe.Pointer(cValue))
+
+    res := C.revm_call_contract_statedb_commit(
+        e.inst,
+        cFrom,
+        cTo,
+        cDataPtr,
+        C.uint(len(data)),
+        cValue,
+        C.uint64_t(gasLimit),
+    )
+
+    if res == nil {
+        return errors.New("execution failed")
+    }
+    C.revm_free_execution_result(res)
+    return nil
 } 
