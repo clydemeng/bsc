@@ -41,6 +41,8 @@ import "C"
 
 import (
     "unsafe"
+    "fmt"
+    "math/big"
 
     "github.com/ethereum/go-ethereum/common"
 )
@@ -63,12 +65,18 @@ func goU256ToC(u FFIU256) C.FFIU256 {
 //export re_state_basic
 func re_state_basic(handle C.uintptr_t, addr C.FFIAddress, out_info *C.FFIAccountInfo) C.int {
     C.debug_basic(handle)
+    gAddr := cAddressToGo(addr)
+
     st, ok := lookup(uintptr(handle))
     if !ok || st == nil || out_info == nil {
         return -1
     }
 
-    info := st.Basic(cAddressToGo(addr))
+    info := st.Basic(gAddr)
+
+    // Debug: print balance
+    balInt := new(big.Int).SetBytes(info.Balance[:])
+    fmt.Printf("[Go] basic addr=%s balance=%s\n", gAddr.Hex(), balInt.String())
 
     // Fill the C struct
     out_info.balance = goU256ToC(info.Balance)
@@ -108,6 +116,7 @@ func re_state_block_hash(handle C.uintptr_t, number C.uint64_t, out_hash *C.FFIH
 //export re_state_code
 func re_state_code(handle C.uintptr_t, code_hash C.FFIHash, out_ptr *unsafe.Pointer, out_len *C.uint32_t) C.int {
     C.debug_code(handle)
+    fmt.Printf("[Go] re_state_code called, handle=%d\n", handle)
     st, ok := lookup(uintptr(handle))
     if !ok || st == nil || out_ptr == nil || out_len == nil {
         return -1

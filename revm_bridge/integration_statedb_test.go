@@ -38,7 +38,7 @@ func TestRevm_StateDB_BalanceContract(t *testing.T) {
 
     // target user whose balance we will query
     userAddr := common.HexToAddress("0x7777777777777777777777777777777777777777")
-    bal := uint256.MustFromDecimal("1000000000000000000") // 1 ETH
+    bal := uint256.MustFromDecimal("99876000000000000000") // 99.876 BNB (18 decimals)
     sdb.AddBalance(userAddr, bal, tracing.BalanceChangeUnspecified)
 
     // Contract account and code
@@ -69,6 +69,9 @@ func TestRevm_StateDB_BalanceContract(t *testing.T) {
     if err != nil {
         t.Fatalf("call failed: %v", err)
     }
+
+    t.Logf("expected balance hex: %s", hex.EncodeToString(common.LeftPadBytes(bal.ToBig().Bytes(), 32)))
+    t.Logf("outputHex: %s", outputHex)
 
     // output should equal the user's balance (32-byte big-endian hex)
     expected := hex.EncodeToString(common.LeftPadBytes(bal.ToBig().Bytes(), 32))
