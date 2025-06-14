@@ -32,6 +32,8 @@ type FFIAccountInfo struct {
 
 type stateDBImpl struct {
     db *state.StateDB
+    // cache of codeHash -> code bytes populated lazily
+    codeCache sync.Map // map[common.Hash][]byte
     // blockHashResolver is optional – if non-nil it is used to satisfy
     // block_hash queries. The function should return the block hash for the
     // given number or the zero hash if not found.
@@ -49,6 +51,15 @@ func (s *stateDBImpl) Basic(addr common.Address) FFIAccountInfo {
     nonce := s.db.GetNonce(addr)
     codeHash := s.db.GetCodeHash(addr)
 
+    if len(codeHash) != 0 && codeHash != (common.Hash{}) {
+        if _, ok := s.codeCache.Load(codeHash); !ok {
+            code := s.db.GetCode(addr)
+            if len(code) > 0 {
+                s.codeCache.Store(codeHash, append([]byte(nil), code...))
+            }
+        }
+    }
+
     return FFIAccountInfo{
         Balance:  uint256ToFFIU256(balance),
         Nonce:    nonce,
@@ -59,9 +70,11 @@ func (s *stateDBImpl) Basic(addr common.Address) FFIAccountInfo {
 // CodeByHash returns the bytecode associated with `codeHash`. The returned slice
 // is a copy – callers may mutate it freely.
 func (s *stateDBImpl) CodeByHash(codeHash common.Hash) []byte {
-    // TODO: The underlying StateDB does not currently expose a direct mapping
-    // from `codeHash` to bytecode. Implementing a robust lookup requires an
-    // auxiliary index. For the time being we return nil to signal "not found".
+    if v, ok := s.codeCache.Load(codeHash); ok {
+        if b, ok2 := v.([]byte); ok2 {
+            return append([]byte(nil), b...) // copy
+        }
+    }
     return nil
 }
 

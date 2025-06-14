@@ -53,8 +53,11 @@ func (e *RevmExecutorStateDB) CallContract(from, to string, data []byte, value s
     defer C.free(unsafe.Pointer(cTo))
 
     var cDataPtr *C.uchar
+    var cDataBuf unsafe.Pointer
     if len(data) > 0 {
-        cDataPtr = (*C.uchar)(unsafe.Pointer(&data[0]))
+        cDataBuf = C.CBytes(data) // allocates C memory and copies the bytes
+        cDataPtr = (*C.uchar)(cDataBuf)
+        defer C.free(cDataBuf)
     }
 
     cValue := C.CString(value)

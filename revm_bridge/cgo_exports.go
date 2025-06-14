@@ -1,5 +1,5 @@
-//go:build cgo && revmcb
-// +build cgo,revmcb
+//go:build cgo && revm
+// +build cgo,revm
 
 package revmbridge
 
@@ -7,6 +7,7 @@ package revmbridge
 #cgo CFLAGS: -I../../revm_integration/revm_ffi_wrapper
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 
 // Fallback definitions — the canonical layout lives in Rust, but we redefine
 // them here so that `cgo` knows the sizes and can generate the Go bindings. The
@@ -30,6 +31,11 @@ typedef struct {
     uint64_t nonce;
     FFIHash code_hash;
 } FFIAccountInfo;
+
+// ------------------- debug helpers (instrumentation) --------------------
+static inline void debug_basic(uintptr_t h)  { printf("[CB] basic   handle=%p\n",  (void*)h); fflush(NULL); }
+static inline void debug_storage(uintptr_t h){ printf("[CB] storage handle=%p\n",  (void*)h); fflush(NULL); }
+static inline void debug_code(uintptr_t h)   { printf("[CB] code    handle=%p\n",  (void*)h); fflush(NULL); }
 */
 import "C"
 
@@ -56,6 +62,7 @@ func goU256ToC(u FFIU256) C.FFIU256 {
 
 //export re_state_basic
 func re_state_basic(handle C.uintptr_t, addr C.FFIAddress, out_info *C.FFIAccountInfo) C.int {
+    C.debug_basic(handle)
     st, ok := lookup(uintptr(handle))
     if !ok || st == nil || out_info == nil {
         return -1
@@ -72,6 +79,7 @@ func re_state_basic(handle C.uintptr_t, addr C.FFIAddress, out_info *C.FFIAccoun
 
 //export re_state_storage
 func re_state_storage(handle C.uintptr_t, addr C.FFIAddress, slot C.FFIHash, out_val *C.FFIU256) C.int {
+    C.debug_storage(handle)
     st, ok := lookup(uintptr(handle))
     if !ok || st == nil || out_val == nil {
         return -1
@@ -99,6 +107,7 @@ func re_state_block_hash(handle C.uintptr_t, number C.uint64_t, out_hash *C.FFIH
 
 //export re_state_code
 func re_state_code(handle C.uintptr_t, code_hash C.FFIHash, out_ptr *unsafe.Pointer, out_len *C.uint32_t) C.int {
+    C.debug_code(handle)
     st, ok := lookup(uintptr(handle))
     if !ok || st == nil || out_ptr == nil || out_len == nil {
         return -1
