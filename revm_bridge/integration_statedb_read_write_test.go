@@ -30,6 +30,8 @@ func TestRevm_StateDB_ReadWrite(t *testing.T) {
     exec, _ := NewRevmExecutorStateDB(handle)
     defer exec.Close()
 
+    t.Logf("initial nonce=%d", sdb.GetNonce(user))
+
     // 1. Read balance (should be 0)
     output, err := exec.CallContract(user.Hex(), contract.Hex(), nil, "0x0", 1_000_000)
     if err != nil {
@@ -45,6 +47,13 @@ func TestRevm_StateDB_ReadWrite(t *testing.T) {
     if err := exec.CallContractCommit(user.Hex(), contract.Hex(), data, "0x0", 1_000_000); err != nil {
         t.Fatalf("mint failed: %v", err)
     }
+
+    t.Logf("post-mint nonce=%d", sdb.GetNonce(user))
+
+    // Check storage value directly via StateDB
+    slot0 := common.Hash{}
+    val := sdb.GetState(contract, slot0)
+    t.Logf("direct StateDB slot0 = %s", val.String())
 
     // 3. Read again – expect 99
     output2, err := exec.CallContract(user.Hex(), contract.Hex(), nil, "0x0", 1_000_000)

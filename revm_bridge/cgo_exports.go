@@ -43,8 +43,9 @@ import (
     "unsafe"
     "fmt"
     "math/big"
-
     "github.com/ethereum/go-ethereum/common"
+    "github.com/holiman/uint256"
+    coretracing "github.com/ethereum/go-ethereum/core/tracing"
 )
 
 // helper to convert C.FFIAddress → go common.Address
@@ -98,6 +99,11 @@ func re_state_storage(handle C.uintptr_t, addr C.FFIAddress, slot C.FFIHash, out
     C.memcpy(unsafe.Pointer(&gSlot[0]), unsafe.Pointer(&slot.bytes[0]), 32)
 
     val := st.Storage(gAddr, gSlot)
+
+    // Debug log
+    balInt := new(big.Int).SetBytes(val[:])
+    fmt.Printf("[Go] storage addr=%s slot=%s val=%s\n", gAddr.Hex(), gSlot.Hex(), balInt.String())
+
     *out_val = goU256ToC(val)
     return 0
 }
@@ -133,5 +139,50 @@ func re_state_code(handle C.uintptr_t, code_hash C.FFIHash, out_ptr *unsafe.Poin
     cbuf := C.CBytes(code)
     *out_ptr = cbuf
     *out_len = C.uint32_t(len(code))
+    return 0
+}
+
+//export re_state_set_basic
+func re_state_set_basic(handle C.size_t, addr C.FFIAddress, info C.FFIAccountInfo) C.int {
+    st, ok := lookup(uintptr(handle))
+    if !ok || st == nil {
+        return -1
+    }
+    gAddr := cAddressToGo(addr)
+    // Update balance & nonce
+    st.mu.Lock()
+    defer st.mu.Unlock()
+    bal := ffiU256ToUint256(info.balance)
+    st.db.SetBalance(gAddr, bal, coretracing.BalanceChangeRevmTransfer)
+    st.db.SetNonce(gAddr, uint64(info.nonce), coretracing.NonceChangeRevm)
+    fmt.Printf("[Go] COMMIT addr=%s nonce=%d balance=%s\n", gAddr.Hex(), uint64(info.nonce), bal.String())
+    // TODO: code hash if needed
+    return 0
+}
+
+// helper convert
+func ffiU256ToUint256(u C.FFIU256) *uint256.Int {
+    var bytes [32]byte
+    C.memcpy(unsafe.Pointer(&bytes[0]), unsafe.Pointer(&u.bytes[0]), 32)
+    i := new(uint256.Int)
+    i.SetBytes(bytes[:])
+    return i
+}
+
+//export re_state_set_storage
+func re_state_set_storage(handle C.size_t, addr C.FFIAddress, slot C.FFIHash, value C.FFIU256) C.int {
+    st, ok := lookup(uintptr(handle))
+    if !ok || st == nil {
+        return -1
+    }
+    gAddr := cAddressToGo(addr)
+    var gSlot common.Hash
+    C.memcpy(unsafe.Pointer(&gSlot[0]), unsafe.Pointer(&slot.bytes[0]), 32)
+    var bytes [32]byte
+    C.memcpy(unsafe.Pointer(&bytes[0]), unsafe.Pointer(&value.bytes[0]), 32)
+    st.mu.Lock()
+    defer st.mu.Unlock()
+    st.db.SetState(gAddr, gSlot, common.BytesToHash(bytes[:]))
+    fmt.Printf("[Go] COMMIT_STORAGE addr=%s slot=%s value=%s\n", gAddr.Hex(), gSlot.Hex(), common.BytesToHash(bytes[:]).Hex())
     return 0
 } 
