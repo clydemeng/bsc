@@ -5,7 +5,7 @@ package vm
 
 /*
 #cgo CFLAGS: -I../../../revm_integration/revm_ffi_wrapper
-#cgo LDFLAGS: -L../../../revm_integration/revm_ffi_wrapper/target/release -lrevm_ffi -Wl,-rpath,../../../revm_integration/revm_ffi_wrapper/target/release
+#cgo LDFLAGS: -L../../../revm_integration/revm_ffi_wrapper/target/release -Wl,-rpath,../../../revm_integration/revm_ffi_wrapper/target/release
 #include <stdlib.h>
 #include <string.h>
 #include "revm_ffi.h"

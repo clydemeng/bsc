@@ -72,8 +72,16 @@ func (m *Memory) Set32(offset uint64, val *uint256.Int) {
 	if offset+32 > uint64(len(m.store)) {
 		panic("invalid memory: store empty")
 	}
-	// Fill in relevant bits
-	val.PutUint256(m.store[offset:])
+	// Manual big-endian write of the value into memory (without relying on
+	// uint256.PutUint256, which may not be present in the vendored version).
+	// First zero-out the 32-byte target region.
+	for i := 0; i < 32; i++ {
+		m.store[offset+uint64(i)] = 0
+	}
+	// Obtain the minimal-length big-endian representation of the integer and
+	// right-align it at the end of the 32-byte slot.
+	bytes := val.Bytes()
+	copy(m.store[offset+32-uint64(len(bytes)):], bytes)
 }
 
 // Resize resizes the memory to size
