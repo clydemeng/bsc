@@ -15,6 +15,7 @@ We will reach the goal incrementally through test-driven sub-tasks.
 
 ## Milestone 4.3 Receipt & Log Translation
 * **Task**  convert REVM `ExecutionResult` ⇒ Go `types.Receipt` + `types.Log` preserving topics/order.
+* **Todo**  add **Code-hash overlay support** – journal code deployments in `pendingBasic` / `pendingCode` so that `CREATE/CREATE2` contracts become visible only after block flush.
 * **Unit test**  `TestReceiptTranslation` – deploy a contract that emits logs; compare translated logs to canonical Go-EVM execution.
 
 ## Milestone 4.4 Intrinsic Gas / Refund Consistency

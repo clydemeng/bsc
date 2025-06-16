@@ -98,6 +98,9 @@ func TestRevm_StateDB_BIGA_ReadWrite(t *testing.T) {
         t.Fatalf("B balance wrong expected 99 got %s", balBHex)
     }
 
+    // ---- Flush pending changes before inspecting StateDB storage ----
+    FlushPending(handle)
+
     // ---- Inspect StateDB storage directly ----
     // slot 0: totalSupply
     slot0 := common.Hash{}

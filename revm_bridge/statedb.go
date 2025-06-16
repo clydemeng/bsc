@@ -8,6 +8,7 @@ import (
     "github.com/ethereum/go-ethereum/common"
     "github.com/ethereum/go-ethereum/core/state"
     "github.com/holiman/uint256"
+    "github.com/ethereum/go-ethereum/core/tracing"
 )
 
 // -----------------------------------------------------------------------------
@@ -34,6 +35,14 @@ type stateDBImpl struct {
     db *state.StateDB
     // cache of codeHash -> code bytes populated lazily
     codeCache sync.Map // map[common.Hash][]byte
+    // ---------------- block-level journal (phase-4.2) ----------------
+    // pendingBasic records the final AccountInfo (balance, nonce, codeHash)
+    // that should be written at block commit.
+    pendingBasic map[common.Address]FFIAccountInfo
+
+    // pendingStorage records the final value for storage slots that changed
+    // during the block: pendingStorage[addr][slot] = value
+    pendingStorage map[common.Address]map[common.Hash]common.Hash
     // blockHashResolver is optional – if non-nil it is used to satisfy
     // block_hash queries. The function should return the block hash for the
     // given number or the zero hash if not found.
@@ -42,10 +51,54 @@ type stateDBImpl struct {
     mu sync.Mutex
 }
 
+// ensureJournal lazily allocs the maps.
+func (s *stateDBImpl) ensureJournal() {
+    if s.pendingBasic == nil {
+        s.pendingBasic = make(map[common.Address]FFIAccountInfo)
+    }
+    if s.pendingStorage == nil {
+        s.pendingStorage = make(map[common.Address]map[common.Hash]common.Hash)
+    }
+}
+
+// flushPending applies everything recorded in the block-level journal to the
+// underlying StateDB and then clears the journal.
+func (s *stateDBImpl) flushPending() {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    if len(s.pendingBasic) == 0 && len(s.pendingStorage) == 0 {
+        return
+    }
+
+    for addr, info := range s.pendingBasic {
+        bal := ffiU256ToUint256Go(info.Balance)
+        s.db.SetBalance(addr, bal, tracing.BalanceChangeTransfer)
+        s.db.SetNonce(addr, info.Nonce, tracing.NonceChangeEoACall)
+    }
+
+    for addr, slots := range s.pendingStorage {
+        for slot, val := range slots {
+            s.db.SetState(addr, slot, val)
+        }
+    }
+
+    // reset
+    s.pendingBasic = nil
+    s.pendingStorage = nil
+}
+
 // Basic returns the account info for `addr`.
 func (s *stateDBImpl) Basic(addr common.Address) FFIAccountInfo {
     s.mu.Lock()
     defer s.mu.Unlock()
+
+    // If there is a pending override, return it directly.
+    if s.pendingBasic != nil {
+        if info, ok := s.pendingBasic[addr]; ok {
+            return info
+        }
+    }
 
     balance := s.db.GetBalance(addr)
     nonce := s.db.GetNonce(addr)
@@ -82,6 +135,15 @@ func (s *stateDBImpl) CodeByHash(codeHash common.Hash) []byte {
 func (s *stateDBImpl) Storage(addr common.Address, slot common.Hash) FFIU256 {
     s.mu.Lock()
     defer s.mu.Unlock()
+
+    // Check pending overlay first.
+    if s.pendingStorage != nil {
+        if accSlots, ok := s.pendingStorage[addr]; ok {
+            if val, ok2 := accSlots[slot]; ok2 {
+                return hashToU256(val)
+            }
+        }
+    }
 
     value := s.db.GetState(addr, slot)
     return hashToU256(value)
@@ -140,4 +202,20 @@ func hashToU256(h common.Hash) FFIU256 {
     var out FFIU256
     copy(out[:], h[:])
     return out
+}
+
+// convert package-local FFIU256 ➜ *uint256.Int
+func ffiU256ToUint256Go(u FFIU256) *uint256.Int {
+    i := new(uint256.Int)
+    i.SetBytes(u[:])
+    return i
+}
+
+// FlushPending applies and clears the pending changes for the given handle.
+// It is intended to be called once at the end of a block before the consensus
+// engine finalises the header.
+func FlushPending(handle uintptr) {
+    if st, ok := lookup(handle); ok && st != nil {
+        st.flushPending()
+    }
 } 

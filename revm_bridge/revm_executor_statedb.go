@@ -16,10 +16,15 @@ import (
     "encoding/hex"
     "errors"
     "unsafe"
+    _ "embed"
 )
 
+//go:embed small_biga_runtime_hex.txt
+var smallBigaRuntimeHex string
+
 type RevmExecutorStateDB struct {
-    inst *C.RevmInstanceStateDB
+    inst   *C.RevmInstanceStateDB
+    handle uintptr // opaque handle to StateDB for eventual flush
 }
 
 // NewRevmExecutorStateDB creates an EVM instance that pulls state from the given handle.
@@ -34,10 +39,14 @@ func NewRevmExecutorStateDB(handle uintptr) (*RevmExecutorStateDB, error) {
     if inst == nil {
         return nil, errors.New("failed to create REVM instance with statedb")
     }
-    return &RevmExecutorStateDB{inst: inst}, nil
+    return &RevmExecutorStateDB{inst: inst, handle: handle}, nil
 }
 
 func (e *RevmExecutorStateDB) Close() {
+    // Flush any pending journal changes before freeing resources.
+    if e.handle != 0 {
+        FlushPending(e.handle)
+    }
     if e.inst != nil {
         C.revm_free_statedb_instance(e.inst)
         e.inst = nil
@@ -122,4 +131,7 @@ func (e *RevmExecutorStateDB) CallContractCommit(from, to string, data []byte, v
     }
     C.revm_free_execution_result(res)
     return nil
-} 
+}
+
+// SmallBigaRuntimeHex exposes the embedded runtime hex for external tests.
+func SmallBigaRuntimeHex() string { return smallBigaRuntimeHex } 

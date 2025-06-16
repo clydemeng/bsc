@@ -41,6 +41,10 @@ func TestRevm_StateDB_BalanceContract(t *testing.T) {
     bal := uint256.MustFromDecimal("99876000000000000000") // 99.876 BNB (18 decimals)
     sdb.AddBalance(userAddr, bal, tracing.BalanceChangeUnspecified)
 
+    // separate caller (pays gas) with enough BNB
+    callerAddr := common.HexToAddress("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    sdb.AddBalance(callerAddr, uint256.MustFromDecimal("1000000000000000000"), tracing.BalanceChangeUnspecified)
+
     // Contract account and code
     contractAddr := common.HexToAddress("0x9999999999999999999999999999999999999999")
     sdb.CreateAccount(contractAddr)
@@ -65,7 +69,7 @@ func TestRevm_StateDB_BalanceContract(t *testing.T) {
     data := append(selector, paddedAddr...)
 
     // Execute view call (gas limit 1m, zero value)
-    outputHex, err := exec.CallContract(userAddr.Hex(), contractAddr.Hex(), data, "0x0", 1_000_000)
+    outputHex, err := exec.CallContract(callerAddr.Hex(), contractAddr.Hex(), data, "0x0", 1_000_000)
     if err != nil {
         t.Fatalf("call failed: %v", err)
     }
