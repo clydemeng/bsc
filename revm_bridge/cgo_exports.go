@@ -153,8 +153,8 @@ func re_state_set_basic(handle C.size_t, addr C.FFIAddress, info C.FFIAccountInf
     st.mu.Lock()
     defer st.mu.Unlock()
     bal := ffiU256ToUint256(info.balance)
-    st.db.SetBalance(gAddr, bal, coretracing.BalanceChangeRevmTransfer)
-    st.db.SetNonce(gAddr, uint64(info.nonce), coretracing.NonceChangeRevm)
+    st.db.SetBalance(gAddr, bal, coretracing.BalanceChangeTransfer)
+    st.db.SetNonce(gAddr, uint64(info.nonce), coretracing.NonceChangeEoACall)
     fmt.Printf("[Go] COMMIT addr=%s nonce=%d balance=%s\n", gAddr.Hex(), uint64(info.nonce), bal.String())
     // TODO: code hash if needed
     return 0
