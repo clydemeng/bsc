@@ -19,6 +19,15 @@ type Executor interface {
     Engine() string
 }
 
+// AdvancedExecutor is implemented by backends that can execute a pre-built
+// Message and return a Go receipt directly (Milestone-4.3).
+// The extra arguments match those required by the legacy ApplyTransaction path
+// so StateProcessor can switch over without large changes.
+type AdvancedExecutor interface {
+    Executor
+    ExecuteTx(msg *types.Message, tx *types.Transaction, txIdx int, gp *core.GasPool, sdb *state.StateDB, header *types.Header, evmCfg Config) (*types.Receipt, error)
+}
+
 type revmExecutor struct {
     inner *revmbridge.RevmExecutorStateDB
 }
