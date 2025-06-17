@@ -149,19 +149,18 @@ func re_state_set_basic(handle C.size_t, addr C.FFIAddress, info C.FFIAccountInf
     var bal FFIU256
     C.memcpy(unsafe.Pointer(&bal), unsafe.Pointer(&info.balance), 32)
 
-    // We need the current codeHash for the account but must avoid a recursive
-    // lock on st.mu (st.Basic also acquires the same mutex). Fetch it directly
-    // from the underlying StateDB instead.
-    st.mu.Lock()
-    codeHash := st.db.GetCodeHash(gAddr)
+    // Extract provided code hash from the FFI struct.
+    var ffiCodeHash FFIHash
+    C.memcpy(unsafe.Pointer(&ffiCodeHash), unsafe.Pointer(&info.code_hash), 32)
 
+    st.mu.Lock()
     // Ensure journal maps are initialised.
     st.ensureJournal()
 
     st.pendingBasic[gAddr] = FFIAccountInfo{
         Balance:  bal,
         Nonce:    uint64(info.nonce),
-        CodeHash: hashToFFI(codeHash),
+        CodeHash: ffiCodeHash,
     }
     st.mu.Unlock()
 
