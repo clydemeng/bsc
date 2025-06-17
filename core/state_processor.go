@@ -72,6 +72,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		gp          = new(GasPool).AddGas(block.GasLimit())
 	)
 
+	// Instantiate the transaction executor selected by build tags.
+	txExecutor, _ := NewTxExecutor(statedb)
+
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
@@ -142,7 +145,18 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		statedb.SetTxContext(tx.Hash(), i)
 
-		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, tx, usedGas, evm, bloomProcessors)
+		// Execute the transaction via the pluggable executor when available.
+		var receipt *types.Receipt
+		if txExecutor != nil {
+			receipt, err = txExecutor.ExecuteTx(msg, i, gp, statedb, header, cfg)
+			// Manual gas accounting: update cumulative used gas.
+			if err == nil {
+				*usedGas += receipt.GasUsed
+				receipt.CumulativeGasUsed = *usedGas
+			}
+		} else {
+			receipt, err = ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, tx, usedGas, evm, bloomProcessors)
+		}
 		if err != nil {
 			bloomProcessors.Close()
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
