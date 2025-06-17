@@ -25,7 +25,7 @@ type Executor interface {
 // so StateProcessor can switch over without large changes.
 type AdvancedExecutor interface {
     Executor
-    ExecuteTx(msg *types.Message, txIdx int, gp *core.GasPool, sdb *state.StateDB, header *types.Header, evmCfg Config) (*types.Receipt, error)
+    ExecuteTx(msg *types.Message, tx *types.Transaction, txIdx int, gp *core.GasPool, sdb *state.StateDB, header *types.Header, evmCfg Config) (*types.Receipt, error)
 }
 
 type goExecutor struct{}
@@ -35,12 +35,13 @@ func (goExecutor) Engine() string { return "go-evm" }
 // ExecuteTx executes the given message using the canonical go-ethereum path
 // and returns the resulting receipt. This is a thin wrapper so that the
 // StateProcessor can treat both backends uniformly.
-func (goExecutor) ExecuteTx(msg *types.Message, txIdx int, gp *core.GasPool, sdb *state.StateDB, header *types.Header, evmCfg Config) (*types.Receipt, error) {
+func (goExecutor) ExecuteTx(msg *types.Message, tx *types.Transaction, txIdx int, gp *core.GasPool, sdb *state.StateDB, header *types.Header, evmCfg Config) (*types.Receipt, error) {
     // Build EVM instance identical to legacy path
     context := NewEVMBlockContext(header, nil, nil)
     evm := NewEVM(context, sdb, nil, evmCfg)
 
-    receipt, err := core.ApplyTransactionWithEVM(msg, gp, sdb, header.Number, header.Hash(), msg.Transaction(), new(uint64), evm)
+    used := new(uint64)
+    receipt, err := core.ApplyTransactionWithEVM(msg, gp, sdb, header.Number, header.Hash(), tx, used, evm)
     return receipt, err
 }
 

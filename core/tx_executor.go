@@ -19,8 +19,9 @@ type TxExecutor interface {
     // Engine returns a short human identifier ("go-evm", "revm" …).
     Engine() string
 
-    // ExecuteTx runs the message and returns a Go-native receipt.
-    ExecuteTx(msg *types.Message, txIdx int, gp *GasPool, sdb *state.StateDB, header *types.Header, evmCfg vm.Config) (*types.Receipt, error)
+    // ExecuteTx runs the provided message/transaction and returns a Go-native receipt.
+    // The original *types.Transaction is provided for log generation and hashing purposes.
+    ExecuteTx(msg *types.Message, tx *types.Transaction, txIdx int, gp *GasPool, sdb *state.StateDB, header *types.Header, evmCfg vm.Config) (*types.Receipt, error)
 }
 
 // NewTxExecutor constructs the build-tag-selected VM backend (via vm.NewExecutor)
@@ -46,6 +47,6 @@ type vmExecutorAdapter struct {
 
 func (v *vmExecutorAdapter) Engine() string { return v.inner.Engine() }
 
-func (v *vmExecutorAdapter) ExecuteTx(msg *types.Message, txIdx int, gp *GasPool, sdb *state.StateDB, header *types.Header, evmCfg vm.Config) (*types.Receipt, error) {
-    return v.inner.ExecuteTx(msg, txIdx, gp, sdb, header, evmCfg)
+func (v *vmExecutorAdapter) ExecuteTx(msg *types.Message, tx *types.Transaction, txIdx int, gp *GasPool, sdb *state.StateDB, header *types.Header, evmCfg vm.Config) (*types.Receipt, error) {
+    return v.inner.ExecuteTx(msg, tx, txIdx, gp, sdb, header, evmCfg)
 } 

@@ -148,11 +148,13 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		// Execute the transaction via the pluggable executor when available.
 		var receipt *types.Receipt
 		if txExecutor != nil {
-			receipt, err = txExecutor.ExecuteTx(msg, i, gp, statedb, header, cfg)
+			receipt, err = txExecutor.ExecuteTx(msg, tx, i, gp, statedb, header, cfg)
 			// Manual gas accounting: update cumulative used gas.
 			if err == nil {
 				*usedGas += receipt.GasUsed
 				receipt.CumulativeGasUsed = *usedGas
+				// ensure bloom field populated asynchronously
+				bloomProcessors.Apply(receipt)
 			}
 		} else {
 			receipt, err = ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, tx, usedGas, evm, bloomProcessors)

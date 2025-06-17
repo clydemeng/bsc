@@ -28,7 +28,7 @@ func (r *revmExecutor) Engine() string { return "revm" }
 // ExecuteTx runs the provided message on the REVM backend and returns a
 // fully-translated Go receipt. The StateDB changes are already persisted via
 // the CGO bridge, we only need to track gas accounting at the consensus layer.
-func (r *revmExecutor) ExecuteTx(msg *types.Message, txIdx int, gp *core.GasPool, _ *state.StateDB, _ *types.Header, _ Config) (*types.Receipt, error) {
+func (r *revmExecutor) ExecuteTx(msg *types.Message, tx *types.Transaction, txIdx int, gp *core.GasPool, _ *state.StateDB, _ *types.Header, _ Config) (*types.Receipt, error) {
     if msg == nil {
         return nil, fmt.Errorf("nil message")
     }
@@ -38,7 +38,7 @@ func (r *revmExecutor) ExecuteTx(msg *types.Message, txIdx int, gp *core.GasPool
         to = msg.To().Hex()
     }
     valueStr := fmt.Sprintf("0x%s", msg.Value().Text(16))
-    receipt, err := r.inner.CallContractCommitReceipt(from, to, msg.Data(), valueStr, msg.Gas(), 0, msg.Transaction())
+    receipt, err := r.inner.CallContractCommitReceipt(from, to, msg.Data(), valueStr, msg.Gas(), 0, tx)
     if err != nil {
         return nil, err
     }
