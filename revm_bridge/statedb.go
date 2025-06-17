@@ -75,6 +75,17 @@ func (s *stateDBImpl) flushPending() {
         bal := ffiU256ToUint256Go(info.Balance)
         s.db.SetBalance(addr, bal, tracing.BalanceChangeTransfer)
         s.db.SetNonce(addr, info.Nonce, tracing.NonceChangeEoACall)
+
+        // Persist new contract byte-code if we have it cached under the CodeHash.
+        // This avoids an additional look-up when the code is first executed.
+        codeHash := ffiHashToCommon(info.CodeHash)
+        if codeHash != (common.Hash{}) {
+            if v, ok := s.codeCache.Load(codeHash); ok {
+                if code, ok2 := v.([]byte); ok2 && len(code) > 0 {
+                    s.db.SetCode(addr, append([]byte(nil), code...))
+                }
+            }
+        }
     }
 
     for addr, slots := range s.pendingStorage {
@@ -200,6 +211,13 @@ func encodeUint64LE(v uint64) [8]byte {
 
 func hashToU256(h common.Hash) FFIU256 {
     var out FFIU256
+    copy(out[:], h[:])
+    return out
+}
+
+// ffiHashToCommon converts FFIHash to go common.Hash.
+func ffiHashToCommon(h FFIHash) common.Hash {
+    var out common.Hash
     copy(out[:], h[:])
     return out
 }
