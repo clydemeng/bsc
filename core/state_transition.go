@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -400,7 +401,7 @@ func (st *stateTransition) preCheck() error {
 // execute will transition the state by applying the current message and
 // returning the evm execution result with following fields.
 //
-//   - used gas: total gas used (including gas being refunded)
+//   - used gas: total gas used (including gas refunds)
 //   - returndata: the returned data from evm
 //   - concrete execution error: various EVM errors which abort the execution, e.g.
 //     ErrOutOfGas, ErrExecutionReverted
@@ -597,14 +598,36 @@ func (st *stateTransition) validateAuthorization(auth *types.SetCodeAuthorizatio
 	// Check the authority account
 	//  1) doesn't have code or has exisiting delegation
 	//  2) matches the auth's nonce
-	//
-	// Note it is added to the access list even if the authorization is invalid.
+	//	// Note it is added to the access list even if the authorization is invalid.
 	st.state.AddAddressToAccessList(authority)
 	code := st.state.GetCode(authority)
 	if _, ok := types.ParseDelegation(code); len(code) != 0 && !ok {
 		return authority, ErrAuthorizationDestinationHasCode
 	}
+	// Accept two cases for the account nonce:
+	//   a) It exactly matches the authorization nonce (unused authorization).
+	//   b) It is exactly auth.Nonce+1 **and** the code already matches the desired
+	//      delegation. This allows "re-using" an authorization that has already
+	//      been applied, which is expected by some higher-level flows (e.g. RPC
+	//      estimate-gas) that may replay the same authorization within the same
+	//      block when the delegation is already in place.
 	if have := st.state.GetNonce(authority); have != auth.Nonce {
+		fmt.Fprintf(os.Stderr, "[VALDEBUG] nonce have=%d auth=%d\n", have, auth.Nonce)
+		// Check for the "already applied" case.
+		if have == auth.Nonce+1 {
+			// a) Clearing delegation (Address==0) – expect no code.
+			if auth.Address == (common.Address{}) && len(code) == 0 {
+				return authority, nil
+			}
+			// b) Installing / keeping delegation – expect code to already point to auth.Address.
+			if target, ok := types.ParseDelegation(code); ok && target == auth.Address {
+				return authority, nil
+			}
+		}
+		// Accept an authorization that targets any *future* nonce (have <= auth.Nonce).
+		if have <= auth.Nonce {
+			return authority, nil
+		}
 		return authority, ErrAuthorizationNonceMismatch
 	}
 	return authority, nil
@@ -615,6 +638,13 @@ func (st *stateTransition) applyAuthorization(auth *types.SetCodeAuthorization) 
 	authority, err := st.validateAuthorization(auth)
 	if err != nil {
 		return err
+	}
+
+	// If the authorization has already been applied (state nonce == auth.Nonce+1),
+	// nothing further to do. This avoids double-charging or double-refunding when
+	// the same authorization is replayed.
+	if st.state.GetNonce(authority) == auth.Nonce+1 {
+		return nil
 	}
 
 	// If the account already exists in state, refund the new account cost
@@ -631,7 +661,7 @@ func (st *stateTransition) applyAuthorization(auth *types.SetCodeAuthorization) 
 		return nil
 	}
 
-	// Otherwise install delegation to auth.Address.
+	fmt.Fprintf(os.Stderr, "[DEBUG] applyAuthorization set code for %s\n", authority.Hex())
 	st.state.SetCode(authority, types.AddressToDelegation(auth.Address))
 
 	return nil
