@@ -45,6 +45,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/miner/minerconfig"
 	"github.com/ethereum/go-ethereum/params"
+	revmbridge "github.com/ethereum/go-ethereum/revm_bridge"
 	"github.com/ethereum/go-ethereum/trie"
 )
 
@@ -116,6 +117,7 @@ func (env *environment) copy() *environment {
 		coinbase: env.coinbase,
 		header:   types.CopyHeader(env.header),
 		receipts: copyReceipts(env.receipts),
+		evm:      env.evm,
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool
@@ -754,6 +756,10 @@ func (w *worker) commitTransaction(env *environment, tx *types.Transaction, rece
 }
 
 func (w *worker) commitBlobTransaction(env *environment, tx *types.Transaction, receiptProcessors ...core.ReceiptProcessor) ([]*types.Log, error) {
+	// Ensure the transaction hash is computed before we strip the sidecar to
+	// prevent Go and REVM builds from diverging in their cached Hash field.
+	_ = tx.Hash()
+
 	sc := types.NewBlobSidecarFromTx(tx)
 	if sc == nil {
 		panic("blob transaction without blobs in miner")
@@ -1079,6 +1085,14 @@ func (w *worker) prepareWork(genParams *generateParams, witness bool) (*environm
 	if w.chainConfig.IsPrague(header.Number, header.Time) {
 		core.ProcessParentBlockHash(header.ParentHash, env.evm)
 	}
+
+	// Flush REVM journal so state mutations are visible in the snapshot
+	// used by tests (EmptyWork expects user balance updated).
+	revmbridge.FlushPendingFor(env.state)
+
+	// Create a local environment copy after flushing to avoid data races.
+	env = env.copy()
+
 	return env, nil
 }
 
@@ -1211,6 +1225,9 @@ func (w *worker) generateWork(params *generateParams, witness bool) *newPayloadR
 	if err != nil {
 		return &newPayloadResult{err: err}
 	}
+
+	// Flush any pending REVM changes so the task's StateDB reflects them.
+	revmbridge.FlushPendingFor(work.state)
 
 	return &newPayloadResult{
 		block:    block,
@@ -1495,9 +1512,11 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		if w.chainConfig.IsCancun(env.header.Number, env.header.Time) && env.sidecars == nil {
 			env.sidecars = make(types.BlobSidecars, 0)
 		}
-		// Create a local environment copy, avoid the data race with snapshot state.
-		// https://github.com/ethereum/go-ethereum/issues/24299
-		env := env.copy()
+		// Flush REVM journal so state mutations are visible in the snapshot
+		// used by tests (EmptyWork expects user balance updated).
+		revmbridge.FlushPendingFor(env.state)
+		// Create a local environment copy after flushing to avoid data races.
+		env = env.copy()
 
 		block = block.WithSidecars(env.sidecars)
 

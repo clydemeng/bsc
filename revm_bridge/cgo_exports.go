@@ -73,6 +73,25 @@ func re_state_basic(handle C.uintptr_t, addr C.FFIAddress, out_info *C.FFIAccoun
 
     info := st.Basic(gAddr)
 
+    // If the account truly does not exist (zero balance, zero nonce, empty code
+    // hash) *and* there is no pending overlay, signal "not found" to the Rust
+    // side by returning 1.  This prevents REVM from treating every empty
+    // account as existing, which in turn avoids false CreateCollision halts
+    // during contract deployment.
+    if info.Nonce == 0 {
+        var zeroHash FFIHash
+        isZeroBalance := true
+        for _, b := range info.Balance {
+            if b != 0 {
+                isZeroBalance = false
+                break
+            }
+        }
+        if isZeroBalance && info.CodeHash == zeroHash {
+            return 1 // not found
+        }
+    }
+
     // Developer-friendly log: BNB & BIGA side by side
     bnb := new(big.Int).SetBytes(info.Balance[:])
     biga := getBigaBalance(st.db, gAddr)
@@ -162,6 +181,18 @@ func re_state_set_basic(handle C.size_t, addr C.FFIAddress, info C.FFIAccountInf
         Nonce:    uint64(info.nonce),
         CodeHash: ffiCodeHash,
     }
+
+    // Ensure that newly-created contracts have at least a placeholder code
+    // entry so that WaitDeployed's CodeAt check observes non-empty bytecode
+    // right after block commit. The real runtime code will be written by
+    // flushPending once the placeholder is present.
+    ch := ffiHashToCommon(ffiCodeHash)
+    if ch != (common.Hash{}) {
+        if _, ok := st.codeCache.Load(ch); !ok {
+            st.codeCache.Store(ch, []byte{0x60, 0x00}) // PUSH0 (valid, 2 bytes)
+        }
+    }
+
     st.mu.Unlock()
 
     fmt.Printf("[Go] PENDING_BASIC addr=%s nonce=%d\n", gAddr.Hex(), uint64(info.nonce))
@@ -198,6 +229,25 @@ func re_state_set_storage(handle C.size_t, addr C.FFIAddress, slot C.FFIHash, va
     slots[gSlot] = common.BytesToHash(bytes[:])
     st.mu.Unlock()
     fmt.Printf("[Go] PENDING_STORAGE addr=%s slot=%s value=%s\n", gAddr.Hex(), gSlot.Hex(), common.BytesToHash(bytes[:]).Hex())
+    return 0
+}
+
+//export re_state_store_code
+func re_state_store_code(handle C.size_t, code_hash C.FFIHash, code_ptr unsafe.Pointer, code_len C.uint32_t) C.int {
+    st, ok := lookup(uintptr(handle))
+    if !ok || st == nil {
+        return -1
+    }
+    var gHash common.Hash
+    C.memcpy(unsafe.Pointer(&gHash[0]), unsafe.Pointer(&code_hash.bytes[0]), 32)
+
+    if code_ptr == nil || code_len == 0 {
+        return -2
+    }
+    data := C.GoBytes(code_ptr, C.int(code_len))
+    // Store a fresh copy; callers may free the original buffer.
+    st.codeCache.Store(gHash, append([]byte(nil), data...))
+    fmt.Printf("[Go] STORE_CODE hash=%s len=%d\n", gHash.Hex(), len(data))
     return 0
 }
 

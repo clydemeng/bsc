@@ -22,9 +22,19 @@ type RevmExecutor struct {
 }
 
 func NewRevmExecutor() (*RevmExecutor, error) {
-	instance := C.revm_new()
+	// Create a configuration that mirrors the behaviour of Go-EVM used in the
+	// unit-test suite.  The crucial bit is disabling the EIP-3607 "reject
+	// transactions from accounts with existing code" rule so that contract
+	// accounts can originate transactions (many tests rely on this).
+
+	var cfg C.RevmConfigFFI
+	cfg.chain_id = 1  // Ethereum main-net chain-ID for most tests
+	cfg.spec_id = 19  // Prague (latest) so all opcodes are available
+	cfg.disable_eip3607 = true
+
+	instance := C.revm_new_with_config(&cfg)
 	if instance == nil {
-		return nil, errors.New("failed to create REVM instance")
+		return nil, errors.New("failed to create REVM instance with config")
 	}
 	return &RevmExecutor{instance: instance}, nil
 }

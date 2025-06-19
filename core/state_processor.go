@@ -148,13 +148,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		// Execute the transaction via the pluggable executor when available.
 		var receipt *types.Receipt
 		if txExecutor != nil {
-			receipt, err = txExecutor.ExecuteTx(msg, tx, i, gp, statedb, header, cfg)
-			// Manual gas accounting: update cumulative used gas.
-			if err == nil {
-				*usedGas += receipt.GasUsed
-				receipt.CumulativeGasUsed = *usedGas
-				// ensure bloom field populated asynchronously
-				bloomProcessors.Apply(receipt)
+			receipt, err = txExecutor.ExecuteTx(msg, tx, i, gp, statedb, header, p.chain, cfg)
+			if err != nil {
+				fmt.Printf("[DEBUG] ExecuteTx failed tx=%s err=%v\n", tx.Hash(), err)
 			}
 		} else {
 			receipt, err = ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, tx, usedGas, evm, bloomProcessors)
@@ -162,6 +158,13 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		if err != nil {
 			bloomProcessors.Close()
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+		}
+		if err == nil {
+			if txExecutor != nil {
+				*usedGas += receipt.GasUsed
+			}
+			receipt.CumulativeGasUsed = *usedGas
+			bloomProcessors.Apply(receipt)
 		}
 		commonTxs = append(commonTxs, tx)
 		receipts = append(receipts, receipt)
@@ -289,11 +292,34 @@ func MakeReceipt(evm *vm.EVM, result *ExecutionResult, statedb *state.StateDB, b
 // for the transaction, gas used and an error if the transaction failed,
 // indicating the block was invalid.
 func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, receiptProcessors ...ReceiptProcessor) (*types.Receipt, error) {
+	// Derive the core message from the transaction first.
 	msg, err := TransactionToMessage(tx, types.MakeSigner(evm.ChainConfig(), header.Number, header.Time), header.BaseFee)
 	if err != nil {
 		return nil, err
 	}
-	// Create a new context to be used in the EVM environment
+
+	// Attempt to utilise the pluggable transaction executor (REVM, etc.).
+	// If construction fails or the selected engine is the legacy Go-EVM one,
+	// we fall back to the original ApplyTransactionWithEVM path.
+	if txExec, errExec := NewTxExecutor(statedb); errExec == nil && txExec != nil {
+		if txExec.Engine() == "revm" {
+			// Execute the transaction via the REVM executor and translate the receipt.
+			receipt, err := txExec.ExecuteTx(msg, tx, statedb.TxIndex(), gp, statedb, header, stubChain{cfg: evm.ChainConfig()}, evm.Config)
+			if err != nil {
+				return nil, err
+			}
+
+			// Update cumulative gas tracking and invoke receipt processors for bloom, etc.
+			*usedGas += receipt.GasUsed
+			receipt.CumulativeGasUsed = *usedGas
+			for _, rp := range receiptProcessors {
+				rp.Apply(receipt)
+			}
+			return receipt, nil
+		}
+	}
+
+	// Fallback to the legacy Go-EVM execution path.
 	return ApplyTransactionWithEVM(msg, gp, statedb, header.Number, header.Hash(), tx, usedGas, evm, receiptProcessors...)
 }
 

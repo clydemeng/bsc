@@ -40,7 +40,7 @@ We will reach the goal incrementally through test-driven sub-tasks.
 
 ---
 
-### Directory Layout for Phase 4
+# Directory Layout for workspace
 ```
 forked_bsc/
 └── plan/
@@ -58,4 +58,10 @@ scripts/
 └── replay-segment.sh
 ```
 
-Each milestone should leave the repo green (`go test ./...` & `cargo test`) and may be merged independently. 
+in our workspace, there are 3 repositories.
+- forked_revm:  it is forked from revm offical repo. Just for a  code reference so that we can learn how the revm works.
+- revm_integration/revm_ffi_wrapper: it is a revm ffi wrapper, which uses revm 24.0.0 version. It expose ffi interfaces so that later on our forked_bsc code can use it
+- forked_bsc:  it is a bsc repo forked from the official bsc code base.  It will use our revm_ffi_wrapper as block vm execution layer, to repalce the existing native bsc evm.
+
+
+# Each milestone should leave the repo green (`go test ./...` & `cargo test`) and may be merged independently. 
