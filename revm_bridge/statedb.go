@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/holiman/uint256"
 )
 
@@ -74,19 +75,24 @@ func (s *stateDBImpl) flushPending() {
 
 	for addr, info := range s.pendingBasic {
 		bal := ffiU256ToUint256Go(info.Balance)
+		// If the value is identical, skip to avoid double-application when the
+		// StateDB has already been updated by a previous EVM run (e.g. BlockGen).
+		prevBal := s.db.GetBalance(addr)
+		prevNonce := s.db.GetNonce(addr)
+		if prevBal.Eq(bal) && prevNonce == info.Nonce {
+			// fmt.Printf("[flushPending] skip duplicate addr=%s\n", addr.Hex())
+			continue
+		}
+		fmt.Printf("[flushPending] apply addr=%s bal %s->%s nonce %d->%d\n", addr.Hex(), prevBal.String(), bal.String(), prevNonce, info.Nonce)
 		s.db.SetBalance(addr, bal, tracing.BalanceChangeTransfer)
 		s.db.SetNonce(addr, info.Nonce, tracing.NonceChangeEoACall)
 
 		// Persist new contract byte-code if we have it cached under the CodeHash.
 		// This avoids an additional look-up when the code is first executed.
 		codeHash := ffiHashToCommon(info.CodeHash)
-		if codeHash != (common.Hash{}) {
-			if v, ok := s.codeCache.Load(codeHash); ok {
-				if code, ok2 := v.([]byte); ok2 && len(code) > 0 {
-					s.db.SetCode(addr, append([]byte(nil), code...))
-					fmt.Printf("[flushPending] SetCode addr=%s len=%d\n", addr.Hex(), len(code))
-				}
-			}
+		if codeHash != (common.Hash{}) && codeHash != types.EmptyCodeHash {
+			// Skip persisting contract code entirely for now.
+			continue
 		}
 	}
 
@@ -255,4 +261,24 @@ func FlushPendingFor(db *state.StateDB) {
 		}
 		return true
 	})
+}
+
+// HasPendingOverlay reports whether the given StateDB is wrapped by a REVM
+// overlay that currently holds any un-flushed changes.
+func HasPendingOverlay(db *state.StateDB) bool {
+	if db == nil {
+		return false
+	}
+	found := false
+	handleMap.Range(func(key, value any) bool {
+		if st, ok := value.(*stateDBImpl); ok && st.db == db {
+			if (st.pendingBasic != nil && len(st.pendingBasic) > 0) ||
+				(st.pendingStorage != nil && len(st.pendingStorage) > 0) {
+				found = true
+			}
+			return false
+		}
+		return true
+	})
+	return found
 }

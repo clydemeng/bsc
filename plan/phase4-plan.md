@@ -18,6 +18,25 @@ We will reach the goal incrementally through test-driven sub-tasks.
 * **Todo**  add **Code-hash overlay support** – journal code deployments in `pendingBasic` / `pendingCode` so that `CREATE/CREATE2` contracts become visible only after block flush.
 * **Unit test**  `TestReceiptTranslation` – deploy a contract that emits logs; compare translated logs to canonical Go-EVM execution.
 
+## Milestone 4.3.1 Block-Execution Parity (Simple)
+* **Goal** Execute a block containing only value-transfer / basic contract-call
+  transactions through both Go-EVM (BlockGen) and REVM and obtain identical
+  receipts, `stateRoot`, `gasUsed`, and `logsBloom`.
+* **Scope** "Simple" means: no SSTORE gas-refund scenarios, no self-destruct,
+  no precompile calls, no blob transactions.
+* **Task**
+  1. Extend `tests/integration` with `block_exec_parity_simple_test.go`.
+  2. Use `core.BlockGen` to build a 5–10 tx block.
+  3. Run execution twice:
+     * path-A (native Go-EVM) – baseline.
+     * path-B (REVM via dispatcher with journal + single-flush).
+  4. Compare receipts array and derived header fields; test fails on any
+     mismatch.
+* **Unit test** `TestBlockExecParity_Simple` – must be green under both
+  `go test ./...` (legacy) and `go test ./... -tags=revm`.
+* **Rationale** Serves as regression-safety net before tackling the full gas
+  refund and precompile milestones.
+
 ## Milestone 4.4 Intrinsic Gas / Refund Consistency
 * **Task**  re-calculate gas used & refunded from REVM side and feed result into Go consensus engine.
 * **Unit test**  `TestGasAccountingParity` – craft txs with SSTORE refund & self-destruct; ensure Go header gasUsed matches REVM output.
