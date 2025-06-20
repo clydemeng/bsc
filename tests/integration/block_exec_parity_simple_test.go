@@ -81,22 +81,55 @@ func buildChainWithTxs(t *testing.T, db ethdb.Database, genesis *core.Genesis, e
 	chain, err := core.NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil, nil)
 	require.NoError(t, err)
 
-	// Generate one block with 5 value transfers
+	// Generate one block: deploy ERC20 + two transfers
 	signer := types.HomesteadSigner{}
 
-	genBlock := genesis.ToBlock()
-	blocks, _ := core.GenerateChain(genesis.Config, genBlock, engine, db, 1, func(i int, bg *core.BlockGen) {
-		// 5 simple txs
-		for n := 0; n < 5; n++ {
-			tx, _ := types.SignTx(types.NewTx(&types.LegacyTx{
-				Nonce:    uint64(n),
-				GasPrice: big.NewInt(1),
-				Gas:      params.TxGas,
-				To:       &to,
-				Value:    big.NewInt(1_000_000_000_000_000), // 0.001 BNB
-			}), signer, senderKey)
-			bg.AddTx(tx)
+	// Simple ERC20 runtime+constructor bytecode (same as used in api_test)
+	erc20Code := common.FromHex("0x608060405234801561001057600080fd5b506004361061002b5760003560e01c8063a9059cbb14610030575b600080fd5b61004a6004803603810190610045919061016a565b610060565b60405161005791906101c5565b60405180910390f35b60008273ffffffffffffffffffffffffffffffffffffffff163373ffffffffffffffffffffffffffffffffffffffff167fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef846040516100bf91906101ef565b60405180910390a36001905092915050565b600080fd5b600073ffffffffffffffffffffffffffffffffffffffff82169050919050565b6000610101826100d6565b9050919050565b610111816100f6565b811461011c57600080fd5b50565b60008135905061012e81610108565b92915050565b6000819050919050565b61014781610134565b811461015257600080fd5b50565b6000813590506101648161013e565b92915050565b60008060408385031215610181576101806100d1565b5b600061018f8582860161011f565b92505060206101a085828601610155565b9150509250929050565b60008115159050919050565b6101bf816101aa565b82525050565b60006020820190506101da60008301846101b6565b92915050565b6101e981610134565b82525050565b600060208201905061020460008301846101e0565b9291505056fea2646970667358221220b469033f4b77b9565ee84e0a2f04d496b18160d26034d54f9487e57788fd36d564736f6c63430008120033")
+
+	// Precompute contract address (nonce 0)
+	fromAddr := crypto.PubkeyToAddress(senderKey.PublicKey)
+	contractAddr := crypto.CreateAddress(fromAddr, 0)
+
+	blocks, _ := core.GenerateChain(genesis.Config, genesis.ToBlock(), engine, db, 1, func(i int, bg *core.BlockGen) {
+		// tx0: contract creation
+		createTx, _ := types.SignTx(types.NewTx(&types.LegacyTx{
+			Nonce:    0,
+			GasPrice: big.NewInt(1),
+			Gas:      800000,
+			To:       nil,
+			Value:    big.NewInt(0),
+			Data:     erc20Code,
+		}), signer, senderKey)
+		bg.AddTx(createTx)
+
+		// Helper to build transfer calldata: transfer(to,value)
+		transferData := func(seq int64) []byte {
+			method := common.Hex2Bytes("a9059cbb")
+			padAddr := common.LeftPadBytes(to.Bytes(), 32)
+			padVal := common.LeftPadBytes(big.NewInt(seq).Bytes(), 32)
+			return append(append(method, padAddr...), padVal...)
 		}
+		// tx1: transfer 11
+		call1, _ := types.SignTx(types.NewTx(&types.LegacyTx{
+			Nonce:    1,
+			GasPrice: big.NewInt(1),
+			Gas:      100000,
+			To:       &contractAddr,
+			Value:    big.NewInt(0),
+			Data:     transferData(11),
+		}), signer, senderKey)
+		bg.AddTx(call1)
+		// tx2: transfer 22
+		call2, _ := types.SignTx(types.NewTx(&types.LegacyTx{
+			Nonce:    2,
+			GasPrice: big.NewInt(1),
+			Gas:      100000,
+			To:       &contractAddr,
+			Value:    big.NewInt(0),
+			Data:     transferData(22),
+		}), signer, senderKey)
+		bg.AddTx(call2)
 	})
 
 	// Insert into the first chain (Go-EVM path) so receipts etc. are finalised
