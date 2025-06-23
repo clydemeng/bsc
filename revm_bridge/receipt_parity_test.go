@@ -165,7 +165,7 @@ func TestReceiptParity_GoEVM_vs_REVM(t *testing.T) {
 	exec, _ := revmbridge.NewRevmExecutorStateDB(handle)
 	defer exec.Close()
 
-	revmReceipt, err := exec.CallContractCommitReceipt(callerAddr.Hex(), contractAddr.Hex(), nil, "0x0", gasLimit, 0, tx)
+	revmReceipt, err := exec.CallContractCommitReceipt(callerAddr.Hex(), contractAddr.Hex(), nil, "0x0", gasLimit, 0, tx, nil)
 	if err != nil {
 		t.Fatalf("REVM execution error: %v", err)
 	}
