@@ -5,20 +5,20 @@ We will reach the goal incrementally through test-driven sub-tasks.
 
 ---
 
-## Milestone 4.1 Core VM Switch-Hook
+## ✅ Milestone 4.1 Core VM Switch-Hook
 * **Task**  insert a feature flag (`revm`) into Go-Ethereum's VM dispatcher so every transaction routes to `revm_bridge` when the flag is on.
 * **Unit test**  `TestVMDispatcher_RevmFlag` ‑ ensure the correct executor type is chosen.
 
-## Milestone 4.2 Block-level Journal & Commit
+## ✅ Milestone 4.2 Block-level Journal & Commit
 * **Task**  collect per-tx `GoDatabase.commit` calls, merge them, and flush to BSC's `StateDB` only at end of block (respecting refund gas, touched-set, etc.).
 * **Unit test**  `TestBlockCommit_MergedChanges` – run two txs in one block that touch the same slot; assert final state is correct and no double-commit occurs.
 
-## Milestone 4.3 Receipt & Log Translation
+## ✅ Milestone 4.3 Receipt & Log Translation
 * **Task**  convert REVM `ExecutionResult` ⇒ Go `types.Receipt` + `types.Log` preserving topics/order.
 * **Todo**  add **Code-hash overlay support** – journal code deployments in `pendingBasic` / `pendingCode` so that `CREATE/CREATE2` contracts become visible only after block flush.
 * **Unit test**  `TestReceiptTranslation` – deploy a contract that emits logs; compare translated logs to canonical Go-EVM execution.
 
-## Milestone 4.3.1 Block-Execution Parity (Simple)
+## ✅ Milestone 4.3.1 Block-Execution Parity (Simple)
 * **Goal** Execute a block containing only value-transfer / basic contract-call
   transactions through both Go-EVM (BlockGen) and REVM and obtain identical
   receipts, `stateRoot`, `gasUsed`, and `logsBloom`.
@@ -37,7 +37,19 @@ We will reach the goal incrementally through test-driven sub-tasks.
 * **Rationale** Serves as regression-safety net before tackling the full gas
   refund and precompile milestones.
 
-## Milestone 4.4 Intrinsic Gas / Refund Consistency
+## ✅ Milestone 4.3.2 Heavy Parity between 4.3.1 and 4.4
+* **Goal** Stress-test REVM by replaying **300 blocks × 200 transactions** (≈ 60 000 tx) and ensure the *block series* ends with identical `stateRoot`, `receiptsRoot`, and block hash compared to native Go-EVM.
+* **Implementation**
+  * Added two sibling tests:
+    * `block_exec_parity_heavy_test.go`  (Go-EVM path, compiled with `!revm`).
+    * `block_exec_parity_heavy_goevm_test.go` (REVM path, compiled with `-tags=revm`).
+  * Custom genesis (1 e20 balance, gas-limit 30 M, London fork postponed) shared by both.
+* **Outcome** Both tests pass; performance numbers after log-silencing:
+  * Go-EVM ~ 0.75 s
+  * REVM   ~ 1.25 s (≈ 1.7 × slower, mainly CGO cost).
+* **Next** Performance topics deferred to a dedicated Mini-Milestone 4.9 (see "Performance Sprint" below).
+
+## ⏳ Milestone 4.4 Intrinsic Gas / Refund Consistency
 * **Task**  re-calculate gas used & refunded from REVM side and feed result into Go consensus engine.
 * **Unit test**  `TestGasAccountingParity` – craft txs with SSTORE refund & self-destruct; ensure Go header gasUsed matches REVM output.
 
@@ -56,6 +68,16 @@ We will reach the goal incrementally through test-driven sub-tasks.
 ## Milestone 4.8 Genesis-to-Head Full Replay (Final)
 * **Task**  boot from genesis and run to latest head; measure performance.
 * **Manual run**  documented in README; not required for automated CI.
+
+## Milestone 4.9 Performance Sprint (Mini)
+* **Goal** Bring REVM verification throughput on par with native Go-EVM.
+* **Key proposals**
+  1. Batch prefetch / batch commit to cut CGO calls.
+  2. Keep StateDB entirely in Rust and expose snapshot handle.
+  3. Avoid code copying; share mmap'd slices between Go and Rust.
+  4. Disable redundant validations inside REVM.
+  5. Compile wrapper with `-C target-cpu=native -O3`.
+* **Success metric** `block_exec_parity_heavy_goevm_test` runtime ≤ baseline Go-EVM.
 
 ---
 
@@ -79,7 +101,7 @@ scripts/
 
 in our workspace, there are 3 repositories.
 - forked_revm:  it is forked from revm offical repo. Just for a  code reference so that we can learn how the revm works.
-- revm_integration/revm_ffi_wrapper: it is a revm ffi wrapper, which uses revm 24.0.0 version. It expose ffi interfaces so that later on our forked_bsc code can use it
+- revm_integration/revm_ffi_wrapper: it is a revm ffi wrapper, which uses revm 24.0.1 version. It exposes FFI interfaces so that later on our forked_bsc code can use it
 - forked_bsc:  it is a bsc repo forked from the official bsc code base.  It will use our revm_ffi_wrapper as block vm execution layer, to repalce the existing native bsc evm.
 
 

@@ -91,8 +91,14 @@ func (s *stateDBImpl) flushPending() {
 		// This avoids an additional look-up when the code is first executed.
 		codeHash := ffiHashToCommon(info.CodeHash)
 		if codeHash != (common.Hash{}) && codeHash != types.EmptyCodeHash {
-			// Skip persisting contract code entirely for now.
-			continue
+			// If the account already has code in trie, skip.
+			if s.db.GetCodeSize(addr) == 0 {
+				if code, ok := s.codeCache.Load(codeHash); ok {
+					if codeBytes, ok2 := code.([]byte); ok2 && len(codeBytes) > 0 {
+						s.db.SetCode(addr, codeBytes)
+					}
+				}
+			}
 		}
 	}
 
