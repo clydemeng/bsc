@@ -38,10 +38,11 @@ func NewRevmExecutorStateDB(handle uintptr) (*RevmExecutorStateDB, error) {
 	var cfg C.RevmConfigFFI // zero-initialised – defaults are fine (chain 1, Prague)
 	cfg.chain_id = 1
 	cfg.spec_id = 19
-	// Match Go-EVM behaviour in tests: allow contract accounts to originate
-	// transactions by disabling the EIP-3607 "reject transactions from
-	// senders with deployed code" rule.
+	// Disable strict sender-code and nonce validation so that the replay
+	// pathway behaves like go-ethereum's BlockGen (which skips these checks
+	// for pre-generated test chains).
 	cfg.disable_eip3607 = true
+	cfg.disable_nonce_check = true
 
 	inst := C.revm_new_with_statedb(C.size_t(handle), &cfg)
 	if inst == nil {
