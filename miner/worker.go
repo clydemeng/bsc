@@ -1088,7 +1088,9 @@ func (w *worker) prepareWork(genParams *generateParams, witness bool) (*environm
 
 	// Flush REVM journal so state mutations are visible in the snapshot
 	// used by tests (EmptyWork expects user balance updated).
-	revmbridge.FlushPendingFor(env.state)
+	if revmbridge.HasPendingOverlay(env.state) {
+		revmbridge.FlushPendingFor(env.state)
+	}
 
 	// Create a local environment copy after flushing to avoid data races.
 	env = env.copy()
@@ -1227,7 +1229,9 @@ func (w *worker) generateWork(params *generateParams, witness bool) *newPayloadR
 	}
 
 	// Flush any pending REVM changes so the task's StateDB reflects them.
-	revmbridge.FlushPendingFor(work.state)
+	if revmbridge.HasPendingOverlay(work.state) {
+		revmbridge.FlushPendingFor(work.state)
+	}
 
 	return &newPayloadResult{
 		block:    block,
@@ -1514,7 +1518,9 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		}
 		// Flush REVM journal so state mutations are visible in the snapshot
 		// used by tests (EmptyWork expects user balance updated).
-		revmbridge.FlushPendingFor(env.state)
+		if revmbridge.HasPendingOverlay(env.state) {
+			revmbridge.FlushPendingFor(env.state)
+		}
 		// Create a local environment copy after flushing to avoid data races.
 		env = env.copy()
 

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -196,6 +197,10 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 			// Validate the state root against the received state root and throw
 			// an error if they don't match.
 			if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
+				fmt.Printf("DEBUG Mismatch root remote=%x local=%x\n", header.Root, root)
+				// dump balances of bank/user addresses for worker test
+				bank := common.HexToAddress("0x0000000000000000000000000000000000000000")
+				_ = bank
 				return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 			}
 			return nil
