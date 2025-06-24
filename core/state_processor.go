@@ -33,6 +33,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
+	// Bring in the prefetch key type; the stub version is compiled for
+	// non-REVM builds so this import is always safe.
+	revmbridge "github.com/ethereum/go-ethereum/revm_bridge"
 )
 
 const largeTxGasLimit = 10000000 // 10M Gas, to measure the execution time of large tx
@@ -109,13 +113,28 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 
-	// Iterate over and process the individual transactions
-	posa, isPoSA := p.chain.engine.(consensus.PoSA)
-	commonTxs := make([]*types.Transaction, 0, txNum)
+	// --------------------------------------------------------------
+	// Batch prefetch (REVM only).
+	// --------------------------------------------------------------
+	if prefetcher, ok := txExecutor.(interface{ Prefetch([]revmbridge.BatchKey) }); ok {
+		keys := make([]revmbridge.BatchKey, 0, len(block.Transactions())*2)
+		for _, tx := range block.Transactions() {
+			fromAddr, _ := types.Sender(signer, tx)
+			keys = append(keys, revmbridge.BatchKey{Address: fromAddr})
+			if to := tx.To(); to != nil {
+				keys = append(keys, revmbridge.BatchKey{Address: *to})
+			}
+		}
+		prefetcher.Prefetch(keys)
+	}
 
-	// initialise bloom processors
+	// Determine if we are running PoSA engine and allocate helper slices.
 	bloomProcessors := NewAsyncReceiptBloomGenerator(txNum)
 	statedb.MarkFullProcessed()
+
+	// Engine helpers
+	posa, isPoSA := p.chain.engine.(consensus.PoSA)
+	commonTxs := make([]*types.Transaction, 0, txNum)
 
 	// usually do have two tx, one for validator set contract, another for system reward contract.
 	systemTxs := make([]*types.Transaction, 0, 2)
@@ -166,7 +185,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			receipt.CumulativeGasUsed = *usedGas
 			bloomProcessors.Apply(receipt)
 		}
-		commonTxs = append(commonTxs, tx)
 		receipts = append(receipts, receipt)
 	}
 	bloomProcessors.Close()

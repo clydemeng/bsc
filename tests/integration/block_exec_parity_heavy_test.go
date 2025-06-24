@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	revmbridge "github.com/ethereum/go-ethereum/revm_bridge"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,9 +70,7 @@ func TestBlockExecParity_Heavy(t *testing.T) {
 
 	engine := ethash.NewFaker()
 
-	// ---------------------------------------------------------------------
 	// 2. Pre-generate the block sequence once (using Go-EVM) – not part of perf bench
-	// ---------------------------------------------------------------------
 	_, blocks, _ := core.GenerateChainWithGenesis(genesis, engine, heavyBlocks, func(i int, bg *core.BlockGen) {
 		signer := types.HomesteadSigner{}
 		baseNonce := uint64(i * txsPerBlock)
@@ -115,6 +114,12 @@ func TestBlockExecParity_Heavy(t *testing.T) {
 	dbVerify := rawdb.NewMemoryDatabase()
 	chainVerify, err := core.NewBlockChain(dbVerify, nil, genesis, nil, engine, vm.Config{}, nil, nil)
 	require.NoError(t, err)
+
+	// Reset counters *after* blockchain is initialized but before REVM starts
+	// executing the generated blocks so that we only measure reads occurring
+	// during verification.
+	revmbridge.ResetProfileCounters()
+
 	start := time.Now()
 	_, err = chainVerify.InsertChain(blocks)
 	require.NoError(t, err)
@@ -128,5 +133,7 @@ func TestBlockExecParity_Heavy(t *testing.T) {
 	require.Equal(t, headGen.ReceiptHash, headVerify.ReceiptHash)
 	require.Equal(t, headGen.Hash(), headVerify.Hash())
 
-	t.Logf("verification : %s", duration)
+	// Fetch counter values collected during verification.
+	acct, stor := revmbridge.ProfileCounters()
+	t.Logf("verification : %s  (accountReads=%d  storageReads=%d)", duration, acct, stor)
 }

@@ -48,6 +48,16 @@ func (r *revmExecutor) CallReceipt(meta *CallMetadata, tx *types.Transaction) (*
 	return receipt, nil
 }
 
+// Prefetch passes the (address,slot) pairs to the underlying REVM executor so
+// that its CacheDB can be primed ahead of execution. The helper is optional –
+// the method is discovered via interface assertion by callers.
+func (r *revmExecutor) Prefetch(keys []revmbridge.BatchKey) {
+	if len(keys) == 0 {
+		return
+	}
+	r.inner.Prefetch(keys)
+}
+
 // NewExecutor constructs a REVM-backed executor when compiled with the `revm`
 // build-tag. It registers the provided StateDB, obtains an opaque handle, and
 // boots a fresh REVM instance using that handle.
