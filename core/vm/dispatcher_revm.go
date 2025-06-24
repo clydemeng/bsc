@@ -40,8 +40,19 @@ func (r *revmExecutor) CallReceipt(meta *CallMetadata, tx *types.Transaction) (*
 	if meta == nil {
 		return nil, fmt.Errorf("nil metadata")
 	}
+
+	// Run each transaction on a fresh snapshot so we can switch to true COW
+	// semantics once snapshot_commit is available. State mutations are
+	// nonetheless persisted back to the Go StateDB via FFI callbacks.
+	exec := r.inner.Clone()
+	if exec == nil {
+		exec = r.inner // fall back (should not happen)
+	} else {
+		defer exec.Close()
+	}
+
 	txHash := tx.Hash()
-	receipt, err := r.inner.CallContractCommitReceipt(meta.From, meta.To, meta.Data, meta.ValueHex, meta.GasLimit, 0, tx, (*[32]byte)(&txHash))
+	receipt, err := exec.CallContractCommitReceipt(meta.From, meta.To, meta.Data, meta.ValueHex, meta.GasLimit, 0, tx, (*[32]byte)(&txHash))
 	if err != nil {
 		return nil, err
 	}
