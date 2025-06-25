@@ -75,6 +75,21 @@ func (s *stateDBImpl) flushPending() {
 
 	for addr, info := range s.pendingBasic {
 		bal := ffiU256ToUint256Go(info.Balance)
+		// Detect accounts that should be deleted: zero balance, zero nonce, empty
+		// code hash and (importantly) no bytecode already present in the trie.
+		if bal.IsZero() && info.Nonce == 0 {
+			var zeroHash FFIHash
+			if info.CodeHash == zeroHash {
+				// The account is empty. Do not explicitly self-destruct it here –
+				// leaving it untouched lets the canonical StateDB deletion logic
+				// (triggered during Commit with deleteEmptyObjects=true) prune it
+				// safely without marking the object as self-destructed. This avoids
+				// accidentally flagging accounts such as the block coinbase which
+				// start empty but receive a mining reward later in the block.
+				delete(s.pendingStorage, addr) // discard any storage overlay
+				continue
+			}
+		}
 		// If the value is identical, skip to avoid double-application when the
 		// StateDB has already been updated by a previous EVM run (e.g. BlockGen).
 		prevBal := s.db.GetBalance(addr)

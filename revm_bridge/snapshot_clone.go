@@ -33,6 +33,9 @@ func (e *RevmExecutorStateDB) Commit(parent *RevmExecutorStateDB) {
 		return
 	}
 	C.revm_snapshot_commit(parent.inst, e.inst)
+	// Immediately discard both cache layers on the parent so that any
+	// subsequent look-ups observe the freshly merged state.
+	C.revm_clear_caches_statedb(parent.inst)
 	// After commit `e.inst` has been freed inside Rust – mark as nil to avoid
 	// double-free in Close().
 	e.inst = nil

@@ -139,6 +139,14 @@ func (e *RevmExecutorStateDB) CallContractCommit(from, to string, data []byte, v
 		return errors.New("execution failed")
 	}
 	C.revm_free_execution_result(res)
+	// Flush the pending overlay immediately so that the underlying Go StateDB
+	// reflects all writes before subsequent consensus logic (e.g. miner reward
+	// application) computes the intermediate root. This mirrors the legacy
+	// Go-EVM path where statedb.Commit(false) is called after every tx.
+	FlushPending(e.handle)
+	// Drop both REVM cache layers so the next transaction sees the up-to-date
+	// state including miner rewards credited by consensus Finalize.
+	C.revm_clear_caches_statedb(e.inst)
 	return nil
 }
 

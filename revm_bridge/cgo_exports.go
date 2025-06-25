@@ -53,7 +53,8 @@ import (
 // through a dedicated build-tag file when deep diagnostics are needed.
 // -----------------------------------------------------------------------------
 
-var revmVerboseLogs = false
+// TEMP: enable verbose logs while debugging storage propagation.
+var revmVerboseLogs = true
 
 func dbg(format string, a ...interface{}) {
 	if revmVerboseLogs {

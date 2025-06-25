@@ -56,6 +56,12 @@ func (r *revmExecutor) CallReceipt(meta *CallMetadata, tx *types.Transaction) (*
 	if err != nil {
 		return nil, err
 	}
+
+	// Merge cache layers back into the parent so subsequent transactions see
+	// the updated state without additional CGO look-ups.
+	if exec != r.inner {
+		exec.Commit(r.inner)
+	}
 	return receipt, nil
 }
 
