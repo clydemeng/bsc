@@ -54,7 +54,7 @@ import (
 // -----------------------------------------------------------------------------
 
 // TEMP: enable verbose logs while debugging storage propagation.
-var revmVerboseLogs = true
+var revmVerboseLogs = false
 
 func dbg(format string, a ...interface{}) {
 	if revmVerboseLogs {
@@ -107,10 +107,13 @@ func re_state_basic(handle C.uintptr_t, addr C.FFIAddress, out_info *C.FFIAccoun
 		}
 	}
 
-	// Developer-friendly log: BNB & BIGA side by side
-	bnb := new(big.Int).SetBytes(info.Balance[:])
-	biga := getBigaBalance(st.db, gAddr)
-	dbg("[Go] READ  addr=%s  nonce=%d  BNB=%s  BIGA=%s\n", gAddr.Hex(), info.Nonce, bnb.String(), biga)
+	if revmVerboseLogs {
+		// Developer-friendly log: BNB & BIGA side by side – guarded so the
+		// big-int allocations are avoided in normal runs.
+		bnb := new(big.Int).SetBytes(info.Balance[:])
+		biga := getBigaBalance(st.db, gAddr)
+		dbg("[Go] READ  addr=%s  nonce=%d  BNB=%s  BIGA=%s\n", gAddr.Hex(), info.Nonce, bnb.String(), biga)
+	}
 
 	// Fill the C struct
 	out_info.balance = goU256ToC(info.Balance)
@@ -132,9 +135,11 @@ func re_state_storage(handle C.uintptr_t, addr C.FFIAddress, slot C.FFIHash, out
 
 	val := st.Storage(gAddr, gSlot)
 
-	// Compact log of the read
-	balInt := new(big.Int).SetBytes(val[:])
-	dbg("[Go] READ_STORAGE addr=%s slot=%s value=%s\n", gAddr.Hex(), gSlot.Hex(), balInt.String())
+	if revmVerboseLogs {
+		// Compact log of the read
+		balInt := new(big.Int).SetBytes(val[:])
+		dbg("[Go] READ_STORAGE addr=%s slot=%s value=%s\n", gAddr.Hex(), gSlot.Hex(), balInt.String())
+	}
 
 	*out_val = goU256ToC(val)
 	return 0
@@ -210,7 +215,9 @@ func re_state_set_basic(handle C.size_t, addr C.FFIAddress, info C.FFIAccountInf
 
 	st.mu.Unlock()
 
-	dbg("[Go] PENDING_BASIC addr=%s nonce=%d\n", gAddr.Hex(), uint64(info.nonce))
+	if revmVerboseLogs {
+		dbg("[Go] PENDING_BASIC addr=%s nonce=%d\n", gAddr.Hex(), uint64(info.nonce))
+	}
 	return 0
 }
 
@@ -243,7 +250,9 @@ func re_state_set_storage(handle C.size_t, addr C.FFIAddress, slot C.FFIHash, va
 	}
 	slots[gSlot] = common.BytesToHash(bytes[:])
 	st.mu.Unlock()
-	dbg("[Go] PENDING_STORAGE addr=%s slot=%s value=%s\n", gAddr.Hex(), gSlot.Hex(), common.BytesToHash(bytes[:]).Hex())
+	if revmVerboseLogs {
+		dbg("[Go] PENDING_STORAGE addr=%s slot=%s value=%s\n", gAddr.Hex(), gSlot.Hex(), common.BytesToHash(bytes[:]).Hex())
+	}
 	return 0
 }
 

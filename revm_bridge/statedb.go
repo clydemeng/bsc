@@ -2,7 +2,6 @@ package revmbridge
 
 import (
 	"encoding/binary"
-	"fmt"
 	"math/big"
 	"sync"
 
@@ -95,10 +94,12 @@ func (s *stateDBImpl) flushPending() {
 		prevBal := s.db.GetBalance(addr)
 		prevNonce := s.db.GetNonce(addr)
 		if prevBal.Eq(bal) && prevNonce == info.Nonce {
+			// debug log disabled to speed up heavy-parity test
 			// fmt.Printf("[flushPending] skip duplicate addr=%s\n", addr.Hex())
 			continue
 		}
-		fmt.Printf("[flushPending] apply addr=%s bal %s->%s nonce %d->%d\n", addr.Hex(), prevBal.String(), bal.String(), prevNonce, info.Nonce)
+		// debug log disabled to speed up heavy-parity test
+		// fmt.Printf("[flushPending] apply addr=%s bal %s->%s nonce %d->%d\n", addr.Hex(), prevBal.String(), bal.String(), prevNonce, info.Nonce)
 		s.db.SetBalance(addr, bal, tracing.BalanceChangeTransfer)
 		s.db.SetNonce(addr, info.Nonce, tracing.NonceChangeEoACall)
 
