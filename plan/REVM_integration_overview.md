@@ -74,7 +74,7 @@ Generation path (miners, BlockGen helper):
 
 So far only the **verification** step benefits (≈ 15 % faster). Generation will speed up once path 4.5 is implemented.
 
-Batch transactions with reth-bsc(ffi) should transmit transactions from Go to Rust. For simplicity, we used RLP for transmission, which takes a lot of time for encoding and decoding. Here is the comparison:
+Batch transactions with reth-bsc(ffi) should transmit transactions from Go to Rust. For simplicity, we used RLP for transmission, which takes a lot of time for encoding and decoding. We excluded the time consumed by the encoding/decoding process. Here is the comparison:
 | Lang | exec a block |
 |-------|--------|
 | Go   | per block:  871.458µs/  1.985167ms/ 3.491958ms/ 892.875µs/ 939.417µs/ 945.208µs |
