@@ -76,6 +76,7 @@ So far only the **verification** step benefits (≈ 15 % faster). Generation wil
 
 Batch transactions with reth-bsc(ffi) should transmit transactions from Go to Rust. For simplicity, we used RLP for transmission, which takes a lot of time for encoding and decoding. Here is the comparison:
 | Lang | exec a block |
+|-------|--------|
 | Go   | per block:  871.458µs/  1.985167ms/ 3.491958ms/ 892.875µs/ 939.417µs/ 945.208µs |
 | Rust | per block:   (655.584µs (init bscExecutor and execute txs), 387.625µs (only execute txs)) / (659.292µs, 381.792µs) / (654µs, 373.75µs) /(636.417µs, 363.459µs) |
 
